@@ -1,0 +1,61 @@
+name: Deploy Lightsail
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: lightsail-production
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Deploy to Lightsail (Mumbai)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.LIGHTSAIL_SSH_KEY }}" > ~/.ssh/lightsail.pem
+          chmod 600 ~/.ssh/lightsail.pem
+          ssh-keyscan -H "${{ secrets.LIGHTSAIL_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Sync code to server
+        env:
+          HOST: ${{ secrets.LIGHTSAIL_HOST }}
+          USER: ${{ secrets.LIGHTSAIL_USER }}
+        run: |
+          rsync -az --delete \
+            -e "ssh -i ~/.ssh/lightsail.pem -o StrictHostKeyChecking=yes" \
+            --exclude '.git/' \
+            --exclude 'node_modules/' \
+            --exclude '.next/' \
+            --exclude 'dist/' \
+            --exclude 'coverage/' \
+            --exclude 'logs/' \
+            --exclude '.env' \
+            --exclude '.env.local' \
+            --exclude '.env.*.local' \
+            --exclude '*.pem' \
+            --exclude 'LightsailDefaultKey*' \
+            --exclude 'secrets/' \
+            ./ "${USER}@${HOST}:~/academic-portal/"
+
+      - name: Remote build and restart
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.LIGHTSAIL_HOST }}
+          username: ${{ secrets.LIGHTSAIL_USER }}
+          key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
+          script_stop: true
+          command_timeout: 40m
+          script: |
+            sed -i 's/\r$//' ~/academic-portal/scripts/deploy.sh
+            chmod +x ~/academic-portal/scripts/deploy.sh
+            bash ~/academic-portal/scripts/deploy.sh

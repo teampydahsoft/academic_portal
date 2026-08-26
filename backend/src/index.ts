@@ -98,10 +98,18 @@ app.use(
 );
 
 if (env.nodeEnv === "production" && !env.auth.secureCookies) {
-  console.error(
-    "Production requires AP_SESSION_SECURE=true when serving over HTTPS. Refusing to start.",
-  );
-  process.exit(1);
+  // IP/HTTP Lightsail deploys (no TLS yet) must set AP_ALLOW_INSECURE_HTTP=true.
+  // Prefer HTTPS + AP_SESSION_SECURE=true as soon as a domain/certificate is available.
+  if (process.env.AP_ALLOW_INSECURE_HTTP === "true") {
+    console.warn(
+      "WARNING: production with AP_SESSION_SECURE=false (AP_ALLOW_INSECURE_HTTP=true). Use HTTPS when possible.",
+    );
+  } else {
+    console.error(
+      "Production requires AP_SESSION_SECURE=true when serving over HTTPS. Refusing to start.",
+    );
+    process.exit(1);
+  }
 }
 
 ensureAuthSchema()

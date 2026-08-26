@@ -25,6 +25,10 @@ npm run dev
 
 Open http://localhost:3000
 
+## Production (AWS Lightsail)
+
+CI/CD and server setup steps: [docs/LIGHTSAIL_CICD.md](docs/LIGHTSAIL_CICD.md)
+
 ## Scope
 
 Only the 15 management-approved modules. Priority UX:
