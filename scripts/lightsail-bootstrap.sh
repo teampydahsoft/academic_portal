@@ -69,13 +69,16 @@ sudo systemctl restart nginx
 sudo systemctl enable nginx
 echo "NGINX_OK"
 
-cd "$APP/backend"
 pm2 delete academic-api >/dev/null 2>&1 || true
-pm2 start ./node_modules/tsx/dist/cli.mjs --name academic-api --time -- src/index.ts
+pm2 delete academic-web >/dev/null 2>&1 || true
+pm2 delete backend >/dev/null 2>&1 || true
+pm2 delete frontend >/dev/null 2>&1 || true
+
+cd "$APP/backend"
+pm2 start ./node_modules/tsx/dist/cli.mjs --name backend --time -- src/index.ts
 
 cd "$APP/frontend"
-pm2 delete academic-web >/dev/null 2>&1 || true
-pm2 start npm --name academic-web --time -- start
+pm2 start npm --name frontend --time -- start
 
 pm2 save
 STARTUP_CMD=$(pm2 startup systemd -u ec2-user --hp /home/ec2-user | grep -E 'sudo .*pm2' || true)

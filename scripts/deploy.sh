@@ -17,13 +17,17 @@ npm run build
 
 echo "==> Restart PM2"
 mkdir -p "$HOME/.pm2"
-cd "$APP_DIR/backend"
+# Drop legacy names from earlier deploys
 pm2 delete academic-api >/dev/null 2>&1 || true
-pm2 start ./node_modules/tsx/dist/cli.mjs --name academic-api --time -- src/index.ts
+pm2 delete academic-web >/dev/null 2>&1 || true
+pm2 delete backend >/dev/null 2>&1 || true
+pm2 delete frontend >/dev/null 2>&1 || true
+
+cd "$APP_DIR/backend"
+pm2 start ./node_modules/tsx/dist/cli.mjs --name backend --time -- src/index.ts
 
 cd "$APP_DIR/frontend"
-pm2 delete academic-web >/dev/null 2>&1 || true
-pm2 start npm --name academic-web --time -- start
+pm2 start npm --name frontend --time -- start
 
 pm2 save
 pm2 status
