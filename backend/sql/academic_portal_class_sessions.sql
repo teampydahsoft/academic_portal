@@ -1,0 +1,14 @@
+-- Class sessions foundation (Academic Portal ownership)
+--
+-- Source of truth: PUBLISHED ap_timetable_plans + CLASS timing slots
+-- Timing: ap_timing_templates / ap_timing_template_slots (never student_database.period_slots)
+--
+-- Generation: POST /api/class-sessions/generate
+--   { publishedTimetablePlanId, startDate?, endDate? }
+--
+-- Date range: student_database.semesters (overridable with startDate/endDate)
+-- Holidays: student_database.custom_holidays (empty targets = all scopes)
+-- Do not use attendance_records as a calendar.
+--
+-- Version safety: unique (timetable_entry_id, session_date). Re-generate skips
+-- existing rows; a newer published version does not overwrite historical sessions.

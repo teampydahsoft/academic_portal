@@ -1,0 +1,48 @@
+{
+  "name": "academic-portal-backend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Pydah Academic Portal API",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "db:migrate": "tsx src/scripts/migrate-academic-portal.ts",
+    "db:migrate:timing": "tsx src/scripts/migrate-timing-only.ts",
+    "db:migrate:class-sessions": "tsx src/scripts/migrate-class-sessions.ts",
+    "db:migrate:subject-type": "tsx src/scripts/migrate-subject-type-snapshot.ts",
+    "db:seed:timings": "tsx src/scripts/seed-default-timings.ts",
+    "db:seed:super-admin": "tsx src/scripts/seed-super-admin.ts",
+    "db:migrate:rbac": "tsx src/scripts/migrate-rbac-permissions.ts",
+    "test:authz": "tsx src/scripts/verify-authz.ts",
+    "test:user-management": "tsx src/scripts/verify-user-management.ts",
+    "test:security": "tsx src/scripts/verify-security-fixes.ts",
+    "test:rbac-dynamic": "tsx src/scripts/verify-rbac-dynamic.ts",
+    "test:permission-matrix": "tsx src/scripts/verify-permission-matrix-ui.ts",
+    "test:hrms-password-live": "tsx src/scripts/verify-hrms-password-live.ts",
+    "audit:security": "tsx src/scripts/audit-readonly-security.ts"
+  },
+  "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "helmet": "^8.3.0",
+    "mongodb": "^7.5.0",
+    "morgan": "^1.11.0",
+    "mysql2": "^3.23.4",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/cookie-parser": "^1.4.10",
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/morgan": "^1.9.10",
+    "@types/node": "^26.2.0",
+    "tsx": "^4.23.12",
+    "typescript": "^5.9.2"
+  }
+}
