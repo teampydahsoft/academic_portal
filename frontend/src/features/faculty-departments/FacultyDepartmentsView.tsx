@@ -103,10 +103,9 @@ export function FacultyDepartmentsView() {
   }, [deptSearchDraft]);
 
   useEffect(() => {
-    if (view !== "departments") return;
     let cancelled = false;
     async function loadDepartments() {
-      setLoading(true);
+      if (view === "departments") setLoading(true);
       setError(null);
       try {
         const deptRes = await apiFetch(`/faculty/departments`, {
@@ -122,20 +121,24 @@ export function FacultyDepartmentsView() {
         if (!cancelled) {
           const rows = deptBody.data ?? [];
           setDepartments(rows);
-          setEnabledGroupCount(deptBody.enabledGroupCount ?? 0);
-          setUsingDefaultGroups(deptBody.usingDefaultGroups ?? true);
-          if (deptBody.kpis) setKpis(deptBody.kpis);
-          setDivisionOptions(
-            [...new Set(rows.map((r) => r.division).filter(Boolean))].sort(),
-          );
-          setDeptOptions(
-            [...new Set(rows.map((r) => r.name).filter(Boolean))].sort(),
-          );
+          if (view === "departments") {
+            setEnabledGroupCount(deptBody.enabledGroupCount ?? 0);
+            setUsingDefaultGroups(deptBody.usingDefaultGroups ?? true);
+            if (deptBody.kpis) setKpis(deptBody.kpis);
+            setDivisionOptions(
+              [...new Set(rows.map((r) => r.division).filter(Boolean))].sort(),
+            );
+            setDeptOptions(
+              [...new Set(rows.map((r) => r.name).filter(Boolean))].sort(),
+            );
+          }
         }
       } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load");
+        if (!cancelled && view === "departments") {
+          setError(err instanceof Error ? err.message : "Failed to load");
+        }
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled && view === "departments") setLoading(false);
       }
     }
     void loadDepartments();
@@ -227,8 +230,9 @@ export function FacultyDepartmentsView() {
   }, [departments, deptSearch, divisionFilter, deptFilter]);
 
   const visibleDeptOptions = useMemo(() => {
-    if (view === "faculty") return deptOptions;
     if (divisionFilter === "all") return deptOptions;
+    if (departments.length === 0) return deptOptions; // Fallback if departments not loaded yet
+    
     return [
       ...new Set(
         departments
@@ -237,7 +241,7 @@ export function FacultyDepartmentsView() {
           .filter(Boolean),
       ),
     ].sort();
-  }, [view, deptOptions, divisionFilter, departments]);
+  }, [deptOptions, divisionFilter, departments]);
 
   // Keep department page in range when filters shrink the list
   useEffect(() => {
@@ -481,7 +485,7 @@ export function FacultyDepartmentsView() {
               className="rounded-md border border-border bg-card px-3 py-1.5 text-sm text-navy-900 focus:outline-none focus:ring-1 focus:ring-navy-800"
             >
               <option value="all">All Departments</option>
-              {deptOptions.map((d) => (
+              {visibleDeptOptions.map((d) => (
                 <option key={d} value={d}>
                   {d}
                 </option>

@@ -12,7 +12,7 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { apiFetch } from "@/lib/api";
 import type { AttendanceSessionCard } from "@/features/attendance-posting/AttendanceTodayView";
 import type { WorkloadSummary } from "@/features/workload/StaffWorkloadView";
-import type { CommandCenterSummary } from "@/features/command-center/CommandCenterView";
+import type { CommandCenterSummary } from "@/features/dashboard/DashboardView";
 
 type Priority = "Critical" | "High" | "Medium";
 

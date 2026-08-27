@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
 import { FilterBar, FilterField } from "@/components/ui/FilterBar";
+import { useAuth } from "@/components/auth/AuthProvider";
 import { useAcademicContext } from "@/components/layout/AcademicProvider";
 import { Button } from "@/components/ui/Button";
 import { apiFetch } from "@/lib/api";
@@ -15,7 +16,6 @@ const searchClassName =
 
 const HIDDEN_ON = [
   "/",
-  "/command-center",
   "/settings",
   "/faculty-departments",
   "/curriculum-subjects",
@@ -32,13 +32,18 @@ export function AcademicFilterBar({ title = "Filters" }: Props) {
   const pathname = usePathname();
   const { masters, loading, filters, setFilters, resetFilters, studentsListStats } =
     useAcademicContext();
+  const { authorization } = useAuth();
   const [searchDraft, setSearchDraft] = useState(filters.q);
   const [studentStatuses, setStudentStatuses] = useState<string[]>([]);
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
-  const hidden = HIDDEN_ON.some(
+  const isDashboard = pathname === "/dashboard" || pathname.startsWith("/dashboard/");
+  const hiddenOnPath = HIDDEN_ON.some(
     (path) => pathname === path || pathname.startsWith(`${path}/`),
   );
+  
+  // Hide filters on dashboard unconditionally
+  const hidden = hiddenOnPath || isDashboard;
   const showSearch =
     pathname === "/students" || pathname.startsWith("/students/");
   const isTimetablesPage =

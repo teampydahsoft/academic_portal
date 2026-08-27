@@ -11,7 +11,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { useAcademicContext } from "@/components/layout/AcademicProvider";
 import { apiFetch } from "@/lib/api";
 import type { StudentListRow } from "@/features/students/student-types";
-import type { CommandCenterSummary } from "@/features/command-center/CommandCenterView";
+import type { CommandCenterSummary } from "@/features/dashboard/DashboardView";
 
 type RiskFilter = "all" | "High" | "Medium";
 

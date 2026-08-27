@@ -36,8 +36,8 @@ export const NAV_GROUPS: NavGroup[] = [
     title: "Overview",
     items: [
       {
-        label: "Command Center",
-        href: "/command-center",
+        label: "Dashboard",
+        href: "/dashboard",
         icon: LayoutDashboard,
         permissions: ["dashboard.view"],
       },

@@ -44,8 +44,8 @@ export function LoginForm() {
 
   useEffect(() => {
     if (!hydrated || loading || !user) return;
-    const next = searchParams.get("next") || "/command-center";
-    router.replace(next.startsWith("/") ? next : "/command-center");
+    const next = searchParams.get("next") || "/dashboard";
+    router.replace(next.startsWith("/") ? next : "/dashboard");
   }, [hydrated, loading, user, router, searchParams]);
 
   async function onSubmit(event: FormEvent) {
@@ -77,8 +77,8 @@ export function LoginForm() {
       }
 
       await refresh();
-      const next = searchParams.get("next") || "/command-center";
-      router.replace(next.startsWith("/") ? next : "/command-center");
+      const next = searchParams.get("next") || "/dashboard";
+      router.replace(next.startsWith("/") ? next : "/dashboard");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
     } finally {
