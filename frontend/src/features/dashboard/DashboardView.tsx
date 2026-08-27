@@ -356,7 +356,7 @@ export function DashboardView() {
                         <Tooltip cursor={{ fill: 'transparent' }} contentStyle={{ borderRadius: '6px' }} />
                         <Bar 
                           dataKey="total" 
-                          fill="#3b82f6" 
+                          fill="#0FAF83" 
                           radius={[0, 4, 4, 0]}
                           barSize={24}
                         />
@@ -387,7 +387,7 @@ export function DashboardView() {
                   </div>
                   <div>
                     <p className="text-sm text-slate-500 mb-1">Today&apos;s Classes Remaining</p>
-                    <p className="text-2xl font-semibold text-amber-600">
+                    <p className="text-2xl font-semibold text-warning">
                       {summary?.classesToday.pending || 0}
                     </p>
                   </div>
@@ -481,7 +481,7 @@ export function DashboardView() {
                       <p className="text-xs text-slate-500">Below 75% threshold</p>
                     </div>
                     <div className="text-right">
-                      <p className={`text-lg font-bold ${(summary?.studentsBelowThreshold || 0) > 0 ? "text-red-600" : "text-slate-700"}`}>
+                      <p className={`text-lg font-bold ${(summary?.studentsBelowThreshold || 0) > 0 ? "text-critical" : "text-slate-700"}`}>
                         {summary?.studentsBelowThreshold || 0}
                       </p>
                     </div>
@@ -494,7 +494,7 @@ export function DashboardView() {
                       <p className="text-xs text-slate-500">Mentoring required</p>
                     </div>
                     <div className="text-right">
-                      <p className="text-lg font-bold text-amber-600">
+                      <p className="text-lg font-bold text-warning">
                         {summary?.openRiskCases || 0}
                       </p>
                     </div>

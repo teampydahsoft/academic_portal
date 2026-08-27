@@ -55,7 +55,7 @@ export function PwaInstallPrompt({ className }: Props) {
           className="h-10 w-10 shrink-0 rounded-lg object-contain ring-1 ring-slate-100 sm:h-11 sm:w-11"
         />
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold text-slate-900">
+          <p className="truncate text-sm font-semibold text-slate-700">
             Install Academic Portal
           </p>
           <p className="truncate text-xs text-slate-500">

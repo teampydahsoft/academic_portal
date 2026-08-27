@@ -51,7 +51,7 @@ export function SelectFilter({
   return (
     <select
       defaultValue={selected}
-      className="h-11 sm:h-9 w-full rounded-md border border-border bg-white px-2 text-sm text-foreground outline-none focus:border-navy-800"
+      className="h-11 sm:h-9 w-full rounded-md border border-border bg-white px-2 text-sm text-foreground outline-none focus:border-brand-600 focus:ring-1 focus:ring-brand-600"
     >
       {unique.map((option, index) => (
         <option key={`${option}__${index}`} value={option}>
@@ -71,7 +71,7 @@ export function SearchInput({
     <input
       type="search"
       placeholder={placeholder}
-      className="h-11 sm:h-9 w-full rounded-md border border-border bg-white px-3 text-sm outline-none focus:border-navy-800 sm:min-w-[220px]"
+      className="h-11 sm:h-9 w-full rounded-md border border-border bg-white px-3 text-sm outline-none focus:border-brand-600 focus:ring-1 focus:ring-brand-600 sm:min-w-[220px]"
     />
   );
 }

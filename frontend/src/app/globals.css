@@ -1,30 +1,39 @@
 @import "tailwindcss";
 
 :root {
-  --navy-950: #0f1c2e;
-  --navy-900: #1f3a5f;
-  --navy-800: #2a4a73;
-  --slate-700: #334155;
-  --slate-500: #64748b;
-  --slate-300: #cbd5e1;
-  --slate-200: #e2e8f0;
-  --slate-100: #f1f5f9;
-  --slate-50: #f8fafc;
-  --success: #15803d;
-  --warning: #b45309;
-  --critical: #b91c1c;
-  --info: #1d4ed8;
-  --brand-50: #ecfdf5;
-  --brand-600: #0f766e;
-  --brand-700: #0f5f59;
-  --brand-800: #115e59;
-  --background: #f5f7fa;
-  --foreground: #0f172a;
-  --card: #ffffff;
-  --border: #e2e8f0;
-  --sidebar: #ffffff;
-  --sidebar-muted: #94a3b8;
-  --sidebar-active: #ecfdf5;
+  /* Navy Primary */
+  --navy-950: #0F2742; /* Dark Navy */
+  --navy-900: #123B63; /* Academic Navy */
+  --navy-800: #1a4d80;
+
+  /* Text & Structure (Mapped over old slate variables) */
+  --slate-700: #123B63; /* Primary Text */
+  --slate-500: #5F7388; /* Secondary Text */
+  --slate-300: #8A9AAC; /* Muted Text */
+  --slate-200: #DCE6EF; /* Border Default */
+  --slate-100: #F8FBFD; /* Subtle Surface */
+  --slate-50: #EAF4FB;  /* Soft Blue (Light Accent) */
+
+  /* Status Colors */
+  --success: #0FAF83; /* Pydah Teal */
+  --warning: #f59e0b; /* Soft Amber */
+  --critical: #ef4444; /* Restrained Red */
+  --info: #1e40af;    /* Dark Blue for Info Text */
+
+  /* Brand / Teal Accent */
+  --brand-50: #e6f7f2; /* Light teal bg */
+  --brand-600: #0FAF83; /* Pydah Teal */
+  --brand-700: #087F68; /* Dark Teal */
+  --brand-800: #065c4b;
+
+  /* App Level */
+  --background: #F3F7FB; /* Main Background */
+  --foreground: #123B63; /* Primary Text */
+  --card: #FFFFFF;
+  --border: #E5EDF4; /* Light Border */
+  --sidebar: #FFFFFF;
+  --sidebar-muted: #8A9AAC;
+  --sidebar-active: #e6f7f2;
 }
 
 @theme inline {

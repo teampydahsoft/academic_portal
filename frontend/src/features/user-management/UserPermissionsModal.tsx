@@ -185,7 +185,7 @@ export function UserPermissionsModal({ user, onClose, onSaved }: Props) {
                                 />
                               </div>
                               <div className="flex-1 min-w-0 text-sm">
-                                <p className={`font-medium ${fromRole && !isRevoked ? "text-slate-600" : "text-slate-900"}`}>
+                                <p className={`font-medium ${fromRole && !isRevoked ? "text-slate-500" : "text-slate-700"}`}>
                                   {presentation?.label || fallbackName}
                                   {fromRole && <span className="ml-2 text-[10px] font-normal uppercase tracking-wider text-slate-400 border border-slate-200 px-1 py-0.5 rounded">Inherited</span>}
                                 </p>

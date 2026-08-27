@@ -38,7 +38,7 @@ export function TopHeader({ onMenuClick }: Props) {
           </button>
           <p className="truncate text-sm text-slate-500">
             Academic Portal <span className="text-slate-300">/</span>{" "}
-            <span className="font-medium text-slate-900">{title}</span>
+            <span className="font-medium text-slate-700">{title}</span>
           </p>
         </div>
 

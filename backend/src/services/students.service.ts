@@ -126,8 +126,8 @@ function toDateOnly(value: Date | string | null | undefined): string | null {
 }
 
 function riskFromAttendance(attendance: number): "High" | "Medium" | "Low" {
-  if (attendance > 0 && attendance < 65) return "High";
-  if (attendance > 0 && attendance < 75) return "Medium";
+  if (attendance < 65) return "High";
+  if (attendance < 75) return "Medium";
   return "Low";
 }
 

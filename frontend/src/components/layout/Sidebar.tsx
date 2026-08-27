@@ -81,7 +81,7 @@ export function Sidebar({ open, collapsed, onClose, onToggleCollapsed }: Props) 
               <p className="truncate text-[11px] font-medium uppercase tracking-[0.12em] text-brand-700">
                 Pydah Group
               </p>
-              <h1 className="truncate text-sm font-semibold text-slate-900">
+              <h1 className="truncate text-sm font-semibold text-slate-700">
                 Academic Portal
               </h1>
             </div>
@@ -130,25 +130,25 @@ export function Sidebar({ open, collapsed, onClose, onToggleCollapsed }: Props) 
                         title={collapsed ? item.label : undefined}
                         onClick={onClose}
                         className={cn(
-                          "group flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] font-medium transition-colors",
+                          "group relative flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] font-medium transition-colors",
                           collapsed && "justify-center px-2",
                           active
-                            ? "bg-brand-50 text-brand-800"
-                            : "text-slate-600 hover:bg-slate-50 hover:text-slate-900",
+                            ? "bg-brand-50 text-brand-700"
+                            : "text-slate-500 hover:bg-slate-50 hover:text-slate-700",
                         )}
                       >
+                        {active ? (
+                          <span className="absolute -left-2 top-1/2 -mt-2.5 h-5 w-1 rounded-r-md bg-brand-600" />
+                        ) : null}
                         <Icon
                           className={cn(
                             "h-4 w-4 shrink-0",
                             active
-                              ? "text-brand-700"
-                              : "text-slate-400 group-hover:text-slate-600",
+                              ? "text-brand-600"
+                              : "text-slate-400 group-hover:text-slate-500",
                           )}
                         />
                         {!collapsed ? <span className="truncate">{item.label}</span> : null}
-                        {!collapsed && active ? (
-                          <span className="ml-auto h-1.5 w-1.5 rounded-full bg-brand-600" />
-                        ) : null}
                       </Link>
                     </li>
                   );
@@ -174,7 +174,7 @@ export function Sidebar({ open, collapsed, onClose, onToggleCollapsed }: Props) 
                   setProfileOpen(true);
                   onClose();
                 }}
-                className="flex h-9 w-9 items-center justify-center rounded-md text-slate-600 transition hover:bg-slate-50 disabled:cursor-default disabled:hover:bg-transparent"
+                className="flex h-9 w-9 items-center justify-center rounded-md text-slate-500 transition hover:bg-slate-50 disabled:cursor-default disabled:hover:bg-transparent"
                 title={user?.name || "Profile"}
                 aria-label="Profile"
               >
@@ -183,7 +183,7 @@ export function Sidebar({ open, collapsed, onClose, onToggleCollapsed }: Props) 
               <button
                 type="button"
                 onClick={() => void logout()}
-                className="flex h-9 w-9 items-center justify-center rounded-md text-slate-600 transition hover:bg-slate-50"
+                className="flex h-9 w-9 items-center justify-center rounded-md text-slate-500 transition hover:bg-slate-50"
                 title="Sign out"
                 aria-label="Sign out"
               >
@@ -203,11 +203,11 @@ export function Sidebar({ open, collapsed, onClose, onToggleCollapsed }: Props) 
                 className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left transition hover:bg-slate-50 disabled:cursor-default disabled:hover:bg-transparent"
                 title={canOpenProfile ? "View / edit your profile" : undefined}
               >
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-slate-100 text-slate-600">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-slate-100 text-slate-500">
                   <UserRound className="h-4 w-4" />
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[13px] font-medium text-slate-900">
+                  <span className="block truncate text-[13px] font-medium text-slate-700">
                     {user?.name || "Signed in"}
                   </span>
                   <span className="block truncate text-[11px] text-slate-500">
@@ -218,7 +218,7 @@ export function Sidebar({ open, collapsed, onClose, onToggleCollapsed }: Props) 
               <button
                 type="button"
                 onClick={() => void logout()}
-                className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] font-medium text-slate-600 transition hover:bg-slate-50 hover:text-slate-900"
+                className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] font-medium text-slate-500 transition hover:bg-slate-50 hover:text-slate-700"
               >
                 <LogOut className="h-4 w-4 shrink-0 text-slate-400" />
                 Sign out
@@ -330,7 +330,7 @@ function SelfProfileModal(props: {
       <button type="button" className="absolute inset-0" aria-label="Close" onClick={props.onClose} />
       <div className="relative flex w-full max-w-lg flex-col max-h-[85vh] rounded-xl border border-border bg-white shadow-xl">
         <div className="flex shrink-0 items-center justify-between border-b border-border px-5 py-3">
-          <h3 className="font-semibold text-slate-900">My profile</h3>
+          <h3 className="font-semibold text-slate-700">My profile</h3>
           <Button variant="ghost" size="sm" onClick={props.onClose}>
             Close
           </Button>
