@@ -29,6 +29,7 @@ type SlotCell = {
     facultyName: string | null;
     facultyHrmsId: string | null;
     roomLabel: string | null;
+    customLabel?: string | null;
   };
 };
 
@@ -84,7 +85,7 @@ type PlannerResponse = {
 type LocalAssignment = {
   dayOfWeek: string;
   timingSlotId: number;
-  subjectId: number;
+  subjectId: number | null;
   subjectCode: string;
   subjectName: string;
   subjectTypeSnapshot: string | null;
@@ -92,7 +93,13 @@ type LocalAssignment = {
   hrmsEmployeeId: string;
   facultyName: string;
   roomLabel: string;
+  /** Free/special period label (CRT, Games, Library, etc.) */
+  customLabel: string;
 };
+
+type PeriodMode = "subject" | "special";
+
+const SPECIAL_PERIOD_SUGGESTIONS = ["CRT", "Games", "Library", "Seminar", "Mentor", "Self Study"];
 
 type ReviewPayload = {
   ok: boolean;
@@ -139,7 +146,9 @@ export function TimetablePlannerView() {
   const [busy, setBusy] = useState(false);
   const [timingsOpen, setTimingsOpen] = useState(false);
   const [form, setForm] = useState({
+    mode: "subject" as PeriodMode,
     subjectId: "",
+    customLabel: "",
     hrmsEmployeeId: "",
     roomLabel: "",
     entryType: "theory" as "theory" | "lab" | "other",
@@ -206,9 +215,12 @@ export function TimetablePlannerView() {
       for (const day of data.days ?? []) {
         const dayGrid = data.grid?.[day] ?? {};
         for (const cell of Object.values(dayGrid)) {
-          if (!cell.assignable || !cell.entry?.subjectId || !cell.entry.facultyHrmsId) {
-            continue;
-          }
+          if (!cell.assignable || !cell.entry) continue;
+          const customLabel = (cell.entry.customLabel ?? "").trim();
+          const isSpecial = Boolean(customLabel) && !cell.entry.subjectId;
+          const isSubjectClass =
+            Boolean(cell.entry.subjectId) && Boolean(cell.entry.facultyHrmsId);
+          if (!isSpecial && !isSubjectClass) continue;
           loaded.push({
             dayOfWeek: DAY_LABEL_TO_CODE[day] ?? day,
             timingSlotId: cell.slotId,
@@ -217,9 +229,10 @@ export function TimetablePlannerView() {
             subjectName: cell.entry.subjectName ?? "",
             subjectTypeSnapshot: cell.entry.subjectTypeSnapshot ?? null,
             entryType: (cell.entry.entryType as "theory" | "lab" | "other") || "theory",
-            hrmsEmployeeId: cell.entry.facultyHrmsId,
+            hrmsEmployeeId: cell.entry.facultyHrmsId ?? "",
             facultyName: cell.entry.facultyName ?? "",
             roomLabel: cell.entry.roomLabel ?? "",
+            customLabel: isSpecial ? customLabel : "",
           });
         }
       }
@@ -249,11 +262,14 @@ export function TimetablePlannerView() {
     if (!cell.assignable) return;
     const dayCode = DAY_LABEL_TO_CODE[day] ?? day;
     const existing = assignmentMap.get(`${dayCode}:${cell.slotId}`);
+    const isSpecial = Boolean(existing?.customLabel) && !existing?.subjectId;
     setSelected({ day, slotId: cell.slotId });
     setFacultySearch("");
     setFacultyOpen(false);
     setForm({
-      subjectId: existing ? String(existing.subjectId) : "",
+      mode: isSpecial ? "special" : "subject",
+      subjectId: existing?.subjectId ? String(existing.subjectId) : "",
+      customLabel: existing?.customLabel ?? "",
       hrmsEmployeeId: existing?.hrmsEmployeeId ?? "",
       roomLabel: existing?.roomLabel ?? "",
       entryType: existing?.entryType ?? "theory",
@@ -262,13 +278,44 @@ export function TimetablePlannerView() {
 
   const saveLocalAssignment = () => {
     if (!selected || !planner) return;
-    const subject = planner.subjects.find((s) => String(s.id) === form.subjectId);
+    const dayCode = DAY_LABEL_TO_CODE[selected.day] ?? selected.day;
     const faculty = planner.faculty.find((f) => f.hrmsEmployeeId === form.hrmsEmployeeId);
+
+    if (form.mode === "special") {
+      const customLabel = form.customLabel.trim();
+      if (!customLabel) {
+        setError("Enter a free/special period name (e.g. CRT, Games, Library)");
+        return;
+      }
+      setAssignments((prev) => {
+        const next = prev.filter(
+          (a) => !(a.dayOfWeek === dayCode && a.timingSlotId === selected.slotId),
+        );
+        next.push({
+          dayOfWeek: dayCode,
+          timingSlotId: selected.slotId,
+          subjectId: null,
+          subjectCode: "",
+          subjectName: "",
+          subjectTypeSnapshot: null,
+          entryType: "other",
+          hrmsEmployeeId: faculty?.hrmsEmployeeId ?? "",
+          facultyName: faculty?.name ?? "",
+          roomLabel: form.roomLabel.trim(),
+          customLabel,
+        });
+        return next;
+      });
+      setSelected(null);
+      setError(null);
+      return;
+    }
+
+    const subject = planner.subjects.find((s) => String(s.id) === form.subjectId);
     if (!subject || !faculty) {
       setError("Subject and Faculty are required");
       return;
     }
-    const dayCode = DAY_LABEL_TO_CODE[selected.day] ?? selected.day;
     setAssignments((prev) => {
       const next = prev.filter(
         (a) => !(a.dayOfWeek === dayCode && a.timingSlotId === selected.slotId),
@@ -284,6 +331,7 @@ export function TimetablePlannerView() {
         hrmsEmployeeId: faculty.hrmsEmployeeId,
         facultyName: faculty.name,
         roomLabel: form.roomLabel.trim(),
+        customLabel: "",
       });
       return next;
     });
@@ -300,7 +348,9 @@ export function TimetablePlannerView() {
       ),
     );
     setForm({
+      mode: "subject",
       subjectId: "",
+      customLabel: "",
       hrmsEmployeeId: "",
       roomLabel: "",
       entryType: "theory",
@@ -327,9 +377,10 @@ export function TimetablePlannerView() {
         timingSlotId: a.timingSlotId,
         subjectId: a.subjectId,
         entryType: a.entryType,
-        hrmsEmployeeId: a.hrmsEmployeeId,
-        facultyName: a.facultyName,
+        hrmsEmployeeId: a.hrmsEmployeeId || null,
+        facultyName: a.facultyName || null,
         roomLabel: a.roomLabel || null,
+        customLabel: a.customLabel || null,
       })),
     };
   };
@@ -644,15 +695,26 @@ export function TimetablePlannerView() {
                                 selected?.day === day && selected.slotId === slot.id
                                   ? "border-navy-800 ring-1 ring-navy-800"
                                   : "border-border hover:border-slate-300",
-                                local ? "bg-blue-50/70" : "bg-slate-50",
+                                local?.customLabel
+                                  ? "bg-amber-50/80"
+                                  : local
+                                    ? "bg-blue-50/70"
+                                    : "bg-slate-50",
                               )}
                             >
                               {local ? (
                                 <>
                                   <p className="font-semibold text-navy-900">
-                                    {local.subjectCode || local.subjectName}
+                                    {local.customLabel
+                                      ? local.customLabel
+                                      : local.subjectCode || local.subjectName}
                                   </p>
-                                  <p className="text-xs text-slate-600">{local.facultyName}</p>
+                                  {local.customLabel ? (
+                                    <p className="text-xs text-slate-500">Free / Special</p>
+                                  ) : null}
+                                  {local.facultyName ? (
+                                    <p className="text-xs text-slate-600">{local.facultyName}</p>
+                                  ) : null}
                                   {local.roomLabel ? (
                                     <p className="text-xs text-slate-500">Room {local.roomLabel}</p>
                                   ) : null}
@@ -692,7 +754,7 @@ export function TimetablePlannerView() {
                         id="assign-class-title"
                         className="text-lg font-semibold text-navy-900"
                       >
-                        Assign Class
+                        Assign Period
                       </h3>
                       <p className="mt-0.5 text-sm text-slate-500">
                         {selected.day}
@@ -713,37 +775,113 @@ export function TimetablePlannerView() {
                 </div>
 
                 <div className="space-y-3 px-5 py-4">
+                  <div className="flex gap-2 rounded-lg border border-border bg-slate-50 p-1">
+                    <button
+                      type="button"
+                      className={cn(
+                        "flex-1 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                        form.mode === "subject"
+                          ? "bg-white text-navy-900 shadow-sm"
+                          : "text-slate-600 hover:text-navy-900",
+                      )}
+                      onClick={() =>
+                        setForm((f) => ({
+                          ...f,
+                          mode: "subject",
+                          customLabel: "",
+                        }))
+                      }
+                    >
+                      Subject class
+                    </button>
+                    <button
+                      type="button"
+                      className={cn(
+                        "flex-1 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                        form.mode === "special"
+                          ? "bg-white text-navy-900 shadow-sm"
+                          : "text-slate-600 hover:text-navy-900",
+                      )}
+                      onClick={() =>
+                        setForm((f) => ({
+                          ...f,
+                          mode: "special",
+                          subjectId: "",
+                          entryType: "other",
+                        }))
+                      }
+                    >
+                      Free / Special
+                    </button>
+                  </div>
+
                   <div className="grid gap-3 sm:grid-cols-2">
-                    <label className="block text-sm sm:col-span-2">
-                      <span className="mb-1.5 block font-medium text-slate-700">
-                        Subject
-                      </span>
-                      <select
-                        className={fieldClass}
-                        value={form.subjectId}
-                        onChange={(e) => {
-                          const subjectId = e.target.value;
-                          const subject = planner.subjects.find(
-                            (s) => String(s.id) === subjectId,
-                          );
-                          setForm((f) => ({
-                            ...f,
-                            subjectId,
-                            entryType: subject
-                              ? mapEmsTypeToEntryType(subject.type)
-                              : f.entryType,
-                          }));
-                        }}
-                      >
-                        <option value="">Select subject</option>
-                        {planner.subjects.map((subject) => (
-                          <option key={subject.id} value={subject.id}>
-                            {subject.code} — {subject.name}
-                            {subject.type ? ` (${subject.type})` : ""}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
+                    {form.mode === "special" ? (
+                      <label className="block text-sm sm:col-span-2">
+                        <span className="mb-1.5 block font-medium text-slate-700">
+                          Period name
+                        </span>
+                        <input
+                          className={fieldClass}
+                          placeholder="e.g. CRT, Games, Library"
+                          value={form.customLabel}
+                          onChange={(e) =>
+                            setForm((f) => ({ ...f, customLabel: e.target.value }))
+                          }
+                        />
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {SPECIAL_PERIOD_SUGGESTIONS.map((label) => (
+                            <button
+                              key={label}
+                              type="button"
+                              className={cn(
+                                "rounded-md border px-2 py-1 text-xs transition-colors",
+                                form.customLabel.trim().toLowerCase() ===
+                                  label.toLowerCase()
+                                  ? "border-navy-800 bg-navy-900 text-white"
+                                  : "border-border bg-white text-slate-600 hover:border-slate-300",
+                              )}
+                              onClick={() =>
+                                setForm((f) => ({ ...f, customLabel: label }))
+                              }
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                      </label>
+                    ) : (
+                      <label className="block text-sm sm:col-span-2">
+                        <span className="mb-1.5 block font-medium text-slate-700">
+                          Subject
+                        </span>
+                        <select
+                          className={fieldClass}
+                          value={form.subjectId}
+                          onChange={(e) => {
+                            const subjectId = e.target.value;
+                            const subject = planner.subjects.find(
+                              (s) => String(s.id) === subjectId,
+                            );
+                            setForm((f) => ({
+                              ...f,
+                              subjectId,
+                              entryType: subject
+                                ? mapEmsTypeToEntryType(subject.type)
+                                : f.entryType,
+                            }));
+                          }}
+                        >
+                          <option value="">Select subject</option>
+                          {planner.subjects.map((subject) => (
+                            <option key={subject.id} value={subject.id}>
+                              {subject.code} — {subject.name}
+                              {subject.type ? ` (${subject.type})` : ""}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    )}
 
                     <label className="block text-sm">
                       <span className="mb-1.5 block font-medium text-slate-700">
@@ -760,30 +898,44 @@ export function TimetablePlannerView() {
                       />
                     </label>
 
-                    <label className="block text-sm">
-                      <span className="mb-1.5 block font-medium text-slate-700">
-                        Class Type
-                      </span>
-                      <select
-                        className={fieldClass}
-                        value={form.entryType}
-                        onChange={(e) =>
-                          setForm((f) => ({
-                            ...f,
-                            entryType: e.target.value as "theory" | "lab" | "other",
-                          }))
-                        }
-                      >
-                        <option value="theory">Theory</option>
-                        <option value="lab">Lab</option>
-                        <option value="other">Other</option>
-                      </select>
-                    </label>
+                    {form.mode === "subject" ? (
+                      <label className="block text-sm">
+                        <span className="mb-1.5 block font-medium text-slate-700">
+                          Class Type
+                        </span>
+                        <select
+                          className={fieldClass}
+                          value={form.entryType}
+                          onChange={(e) =>
+                            setForm((f) => ({
+                              ...f,
+                              entryType: e.target.value as "theory" | "lab" | "other",
+                            }))
+                          }
+                        >
+                          <option value="theory">Theory</option>
+                          <option value="lab">Lab</option>
+                          <option value="other">Other</option>
+                        </select>
+                      </label>
+                    ) : (
+                      <div className="block text-sm">
+                        <span className="mb-1.5 block font-medium text-slate-700">
+                          Type
+                        </span>
+                        <div className={cn(fieldClass, "flex items-center text-slate-600")}>
+                          Free / Special period
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   <div className="block text-sm">
                     <span className="mb-1.5 block font-medium text-slate-700">
-                      Faculty
+                      Faculty{" "}
+                      {form.mode === "special" ? (
+                        <span className="font-normal text-slate-400">(optional)</span>
+                      ) : null}
                     </span>
 
                     {selectedFaculty && !facultyOpen ? (
@@ -825,7 +977,7 @@ export function TimetablePlannerView() {
                         <div className="p-2">
                           <input
                             type="search"
-                            autoFocus={!selectedFaculty}
+                            autoFocus={!selectedFaculty && form.mode === "subject"}
                             placeholder="Type at least 2 letters to search faculty…"
                             className="h-9 w-full rounded-md border border-border bg-slate-50 px-3 text-sm outline-none focus:border-navy-700 focus:bg-white focus:ring-2 focus:ring-navy-900/10"
                             value={facultySearch}
@@ -840,6 +992,9 @@ export function TimetablePlannerView() {
                           <p className="border-t border-border px-3 py-3 text-xs text-slate-500">
                             Search by name, emp no, division, or department — results show in 2 columns
                             (no scrolling).
+                            {form.mode === "special"
+                              ? " Faculty is optional for free/special periods."
+                              : ""}
                           </p>
                         ) : filteredFaculty.length === 0 ? (
                           <p className="border-t border-border px-3 py-3 text-sm text-slate-500">
@@ -926,7 +1081,9 @@ export function TimetablePlannerView() {
                   <Button variant="secondary" onClick={clearLocalAssignment}>
                     Clear
                   </Button>
-                  <Button onClick={saveLocalAssignment}>Assign</Button>
+                  <Button onClick={saveLocalAssignment}>
+                    {form.mode === "special" ? "Save Period" : "Assign"}
+                  </Button>
                 </div>
               </div>
             </div>

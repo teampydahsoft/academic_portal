@@ -196,10 +196,13 @@ async function main() {
   try {
     enforceAcademicScope(
       {
-        userId: 0,
+        userId: 1,
         roles: [],
-        roleKeys: ["hod"],
-        permissions: ROLE_PERMISSIONS.hod,
+        roleKeys: [],
+        permissions: [...ROLE_PERMISSIONS.hod] as any[],
+        rolePermissions: [...ROLE_PERMISSIONS.hod] as string[],
+        directPermissions: [],
+        revokedPermissions: [],
         scope: buildScopeFromAssignments([
           { roleKey: "hod", label: "HOD", collegeId: 1, branchId: 57 },
         ]),

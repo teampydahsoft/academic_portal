@@ -12,6 +12,7 @@ import {
   setUserActiveStatus,
   updateManagedUserProfile,
   updateUserAssignmentScope,
+  setUserPermissions,
 } from "../services/user-management.service.js";
 
 export const usersRouter = Router();
@@ -134,8 +135,8 @@ usersRouter.post(
       const scopes = Array.isArray(body.scopes)
         ? body.scopes.map(
             (s: { collegeId?: number | null; branchId?: number | null }) => ({
-              collegeId: s?.collegeId == null || s?.collegeId === "" ? null : Number(s.collegeId),
-              branchId: s?.branchId == null || s?.branchId === "" ? null : Number(s.branchId),
+              collegeId: s?.collegeId == null || (s?.collegeId as unknown) === "" ? null : Number(s.collegeId),
+              branchId: s?.branchId == null || (s?.branchId as unknown) === "" ? null : Number(s.branchId),
             }),
           )
         : undefined;
@@ -173,8 +174,8 @@ usersRouter.put(
         assignments: assignments.map(
           (a: { roleKey?: string; collegeId?: number | null; branchId?: number | null }) => ({
             roleKey: String(a.roleKey ?? ""),
-            collegeId: a.collegeId == null || a.collegeId === "" ? null : Number(a.collegeId),
-            branchId: a.branchId == null || a.branchId === "" ? null : Number(a.branchId),
+            collegeId: a.collegeId == null || (a.collegeId as unknown) === "" ? null : Number(a.collegeId),
+            branchId: a.branchId == null || (a.branchId as unknown) === "" ? null : Number(a.branchId),
           }),
         ),
         actorUserId: req.authUser!.id,
@@ -276,6 +277,26 @@ usersRouter.put(
         actorUserId: req.authUser!.id,
         ipAddress: req.ip,
       });
+      res.json(user);
+    } catch (error) {
+      sendError(res, error, next);
+    }
+  },
+);
+
+usersRouter.put(
+  "/:id/permissions",
+  requirePermission("user_management.manage_users"),
+  async (req: AuthedRequest, res, next) => {
+    try {
+      const userId = paramId(req.params.id);
+      if (!Array.isArray(req.body?.permissions)) {
+        res.status(400).json({ message: "permissions array is required" });
+        return;
+      }
+      const revoked = Array.isArray(req.body?.revokedPermissions) ? req.body.revokedPermissions : [];
+      await setUserPermissions(userId, req.body.permissions, revoked, req.authUser!.id);
+      const user = await getManagedUser(userId);
       res.json(user);
     } catch (error) {
       sendError(res, error, next);

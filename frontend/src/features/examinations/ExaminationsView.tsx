@@ -9,6 +9,11 @@ import { DataTable } from "@/components/ui/DataTable";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { FilterBar, FilterField } from "@/components/ui/FilterBar";
 import { Button } from "@/components/ui/Button";
+import {
+  MobileDataCardHeader,
+  MobileDataCardGrid,
+  MobileDataCardField,
+} from "@/components/ui/MobileDataCard";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { useAcademicContext } from "@/components/layout/AcademicProvider";
 import { apiFetch } from "@/lib/api";
@@ -342,6 +347,27 @@ export function ExaminationsView() {
         <DataTable
           rows={rows}
           rowKey={(row) => String(row.id)}
+          mobileRender={(row) => (
+            <div className="flex flex-col gap-1">
+              <MobileDataCardHeader
+                title={
+                  <Link href={`/examinations/${row.id}`} className="hover:underline">
+                    {row.name}
+                  </Link>
+                }
+                status={row.status ? <StatusBadge status={row.status} /> : undefined}
+                secondary={`${row.college || "—"} · ${row.course || "—"} · ${row.branch || "—"}`}
+              />
+              <MobileDataCardGrid>
+                <MobileDataCardField label="Type" value={row.type ? <StatusBadge status={row.type} /> : "—"} />
+                <MobileDataCardField label="Batch" value={row.batch || "—"} />
+                <MobileDataCardField label="Year / Sem" value={yearSem(row)} />
+                <MobileDataCardField label="Dates" value={dateRange(row.examinationStartDate, row.examinationEndDate)} />
+                <MobileDataCardField label="Papers" value={row.subjectCount} />
+                <MobileDataCardField label="Applications" value={row.applicationCount} />
+              </MobileDataCardGrid>
+            </div>
+          )}
           columns={[
             {
               key: "exam",

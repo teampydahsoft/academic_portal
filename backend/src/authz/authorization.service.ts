@@ -27,6 +27,9 @@ export type AuthzContext = {
   roles: RoleAssignment[];
   roleKeys: string[];
   permissions: Permission[];
+  rolePermissions: string[];
+  directPermissions: string[];
+  revokedPermissions: string[];
   scope: AcademicScope;
 };
 
@@ -42,6 +45,7 @@ type RoleRow = RowDataPacket & {
 
 type PermRow = RowDataPacket & {
   permission_key: string;
+  mode: "grant" | "revoke";
 };
 
 type RoleMetaRow = RowDataPacket & {
@@ -237,7 +241,32 @@ export async function loadAuthzContext(userId: number): Promise<AuthzContext> {
 
   const roleKeys = [...new Set(roles.map((r) => r.roleKey))];
   const roleIds = [...new Set(roles.map((r) => r.roleId!).filter(Boolean))];
-  const permissions = (await loadPermissionsForRoleIds(roleIds)) as Permission[];
+  const rolePermissions = (await loadPermissionsForRoleIds(roleIds)) as string[];
+  
+  const userPermRows = await queryAcademic<PermRow[]>(
+    `
+    SELECT p.permission_key, up.mode
+    FROM ap_user_permissions up
+    INNER JOIN ap_permissions p ON p.id = up.permission_id
+    WHERE up.user_id = ?
+    `,
+    [userId],
+  );
+  
+  const directPermissions = userPermRows
+    .filter((r) => r.mode === "grant")
+    .map((r) => String(r.permission_key));
+    
+  const revokedPermissions = userPermRows
+    .filter((r) => r.mode === "revoke")
+    .map((r) => String(r.permission_key));
+  
+  const combined = new Set([...rolePermissions, ...directPermissions]);
+  for (const p of revokedPermissions) {
+    combined.delete(p);
+  }
+  const permissions = [...combined].sort() as Permission[];
+
   const scope = buildScopeFromAssignments(roles);
 
   return {
@@ -245,6 +274,9 @@ export async function loadAuthzContext(userId: number): Promise<AuthzContext> {
     roles,
     roleKeys,
     permissions,
+    rolePermissions,
+    directPermissions,
+    revokedPermissions,
     scope,
   };
 }

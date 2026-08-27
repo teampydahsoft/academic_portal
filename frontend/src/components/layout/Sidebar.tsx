@@ -328,14 +328,14 @@ function SelfProfileModal(props: {
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/40 p-4">
       <button type="button" className="absolute inset-0" aria-label="Close" onClick={props.onClose} />
-      <div className="relative w-full max-w-lg rounded-xl border border-border bg-white shadow-xl">
-        <div className="flex items-center justify-between border-b border-border px-5 py-3">
+      <div className="relative flex w-full max-w-lg flex-col max-h-[85vh] rounded-xl border border-border bg-white shadow-xl">
+        <div className="flex shrink-0 items-center justify-between border-b border-border px-5 py-3">
           <h3 className="font-semibold text-slate-900">My profile</h3>
           <Button variant="ghost" size="sm" onClick={props.onClose}>
             Close
           </Button>
         </div>
-        <div className="space-y-3 px-5 py-4">
+        <div className="overflow-y-auto space-y-3 px-5 py-4">
           {loading ? <p className="text-sm text-slate-500">Loading…</p> : null}
           {error ? <p className="text-sm text-critical">{error}</p> : null}
           {!loading ? (

@@ -21,6 +21,9 @@ export type ManagedUser = {
   roles: RoleAssignment[];
   lastLoginAt: string | null;
   permissions?: string[];
+  rolePermissions?: string[];
+  directPermissions?: string[];
+  revokedPermissions?: string[];
   createdAt?: string | null;
   updatedAt?: string | null;
 };

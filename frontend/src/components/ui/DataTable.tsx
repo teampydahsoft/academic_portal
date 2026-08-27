@@ -13,6 +13,7 @@ type Props<T> = {
   rowKey: (row: T) => string;
   emptyMessage?: string;
   onRowClick?: (row: T) => void;
+  mobileRender?: (row: T) => React.ReactNode;
 };
 
 export function DataTable<T>({
@@ -21,6 +22,7 @@ export function DataTable<T>({
   rowKey,
   emptyMessage = "No records found.",
   onRowClick,
+  mobileRender,
 }: Props<T>) {
   if (rows.length === 0) {
     return (
@@ -30,25 +32,21 @@ export function DataTable<T>({
     );
   }
 
+  const tableClasses = cn(
+    "overflow-x-auto rounded-lg border border-border bg-card",
+    mobileRender && "hidden md:block"
+  );
+
   return (
-    <div className="overflow-x-auto rounded-lg border border-border bg-card">
-      <table className="min-w-full text-left text-sm">
-        <thead className="border-b border-border bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-          <tr>
-            {columns.map((column) => (
-              <th key={column.key} className={cn("px-3 py-2.5 font-medium", column.className)}>
-                {column.header}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
+    <>
+      {mobileRender && (
+        <div className="grid grid-cols-1 gap-3 md:hidden">
           {rows.map((row) => (
-            <tr
+            <div
               key={rowKey(row)}
               className={cn(
-                "border-b border-border last:border-0 hover:bg-slate-50",
-                onRowClick && "cursor-pointer",
+                "rounded-lg border border-border bg-card p-4 shadow-sm",
+                onRowClick && "cursor-pointer hover:bg-slate-50 transition-colors"
               )}
               onClick={onRowClick ? () => onRowClick(row) : undefined}
               onKeyDown={
@@ -64,15 +62,54 @@ export function DataTable<T>({
               tabIndex={onRowClick ? 0 : undefined}
               role={onRowClick ? "button" : undefined}
             >
+              {mobileRender(row)}
+            </div>
+          ))}
+        </div>
+      )}
+      <div className={tableClasses}>
+        <table className="min-w-full text-left text-sm">
+          <thead className="border-b border-border bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+            <tr>
               {columns.map((column) => (
-                <td key={column.key} className={cn("px-3 py-2.5 align-middle", column.className)}>
-                  {column.render(row)}
-                </td>
+                <th key={column.key} className={cn("px-3 py-2.5 font-medium", column.className)}>
+                  {column.header}
+                </th>
               ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <tr
+                key={rowKey(row)}
+                className={cn(
+                  "border-b border-border last:border-0 hover:bg-slate-50",
+                  onRowClick && "cursor-pointer transition-colors"
+                )}
+                onClick={onRowClick ? () => onRowClick(row) : undefined}
+                onKeyDown={
+                  onRowClick
+                    ? (event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          onRowClick(row);
+                        }
+                      }
+                    : undefined
+                }
+                tabIndex={onRowClick ? 0 : undefined}
+                role={onRowClick ? "button" : undefined}
+              >
+                {columns.map((column) => (
+                  <td key={column.key} className={cn("px-3 py-2.5 align-middle", column.className)}>
+                    {column.render(row)}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </>
   );
 }

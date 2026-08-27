@@ -8,12 +8,14 @@ import { Button } from "@/components/ui/Button";
 import { apiFetch } from "@/lib/api";
 
 const selectClassName =
-  "h-9 min-w-[140px] rounded-md border border-border bg-white px-2 text-sm text-foreground outline-none focus:border-navy-800";
+  "h-11 sm:h-9 w-full sm:w-auto sm:min-w-[140px] rounded-md border border-border bg-white px-2 text-sm text-foreground outline-none focus:border-navy-800";
 
 const searchClassName =
-  "h-9 w-full min-w-[220px] rounded-md border border-border bg-white px-3 text-sm text-foreground outline-none focus:border-navy-800";
+  "h-11 sm:h-9 w-full sm:min-w-[220px] rounded-md border border-border bg-white px-3 text-sm text-foreground outline-none focus:border-navy-800";
 
 const HIDDEN_ON = [
+  "/",
+  "/command-center",
   "/settings",
   "/faculty-departments",
   "/curriculum-subjects",
@@ -32,6 +34,7 @@ export function AcademicFilterBar({ title = "Filters" }: Props) {
     useAcademicContext();
   const [searchDraft, setSearchDraft] = useState(filters.q);
   const [studentStatuses, setStudentStatuses] = useState<string[]>([]);
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
   const hidden = HIDDEN_ON.some(
     (path) => pathname === path || pathname.startsWith(`${path}/`),
@@ -314,20 +317,36 @@ export function AcademicFilterBar({ title = "Filters" }: Props) {
       )}
 
       {showSearch ? (
-        <div className="mb-0 flex items-end gap-3 rounded-lg border border-border bg-card p-3">
-          <div className="flex min-w-0 flex-1 flex-wrap items-end gap-3">
-            <FilterField label="Search">
-              <input
-                type="search"
-                value={searchDraft}
-                onChange={(e) => setSearchDraft(e.target.value)}
-                placeholder="Admission no, name, section"
-                className={searchClassName}
-                aria-label="Search students"
-              />
-            </FilterField>
+        <div className="mb-0 flex flex-col gap-3 rounded-lg border border-border bg-card p-3">
+          <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-end gap-3 w-full">
+            {/* Search Input & Mobile Filter Toggle row */}
+            <div className="flex items-end gap-2 w-full sm:w-auto flex-1">
+              <div className="flex-1 min-w-0">
+                <FilterField label="Search">
+                  <input
+                    type="search"
+                    value={searchDraft}
+                    onChange={(e) => setSearchDraft(e.target.value)}
+                    placeholder="Admission no, name, section"
+                    className={searchClassName}
+                    aria-label="Search students"
+                  />
+                </FilterField>
+              </div>
+              <Button
+                type="button"
+                variant="secondary"
+                className="h-11 sm:hidden px-3"
+                onClick={() => setMobileFiltersOpen(!mobileFiltersOpen)}
+              >
+                {mobileFiltersOpen ? "Hide Filters" : "Filters"}
+              </Button>
+            </div>
 
-            <FilterField label="Academic Year">
+            {/* Rest of the filters - Grid on mobile, flex on desktop */}
+            <div className={`w-full sm:w-auto flex-col sm:flex-row sm:flex-wrap sm:items-end gap-3 ${mobileFiltersOpen ? "flex" : "hidden sm:flex"}`}>
+              <div className="grid grid-cols-2 gap-3 w-full sm:flex sm:w-auto sm:flex-wrap sm:items-end">
+                <FilterField label="Academic Year">
               <select
                 className={selectClassName}
                 value={filters.academicYear}
@@ -499,35 +518,37 @@ export function AcademicFilterBar({ title = "Filters" }: Props) {
               </FilterField>
             ) : null}
 
-            <FilterField label="Student Status">
-              <select
-                className={selectClassName}
-                value={filters.studentStatus === "all" ? "all" : filters.studentStatus}
-                onChange={(e) =>
-                  setFilters({
-                    studentStatus: e.target.value === "all" ? "all" : e.target.value,
-                  })
-                }
+                <FilterField label="Student Status">
+                  <select
+                    className={selectClassName}
+                    value={filters.studentStatus === "all" ? "all" : filters.studentStatus}
+                    onChange={(e) =>
+                      setFilters({
+                        studentStatus: e.target.value === "all" ? "all" : e.target.value,
+                      })
+                    }
+                  >
+                    <option value="all">All Statuses</option>
+                    {studentStatuses.map((status) => (
+                      <option key={status} value={status}>
+                        {status}
+                      </option>
+                    ))}
+                  </select>
+                </FilterField>
+              </div>
+              
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                onClick={resetFilters}
+                className="mb-0 h-11 sm:h-9 shrink-0 px-4 w-full sm:w-auto mt-2 sm:mt-0"
               >
-                <option value="all">All Statuses</option>
-                {studentStatuses.map((status) => (
-                  <option key={status} value={status}>
-                    {status}
-                  </option>
-                ))}
-              </select>
-            </FilterField>
+                Reset
+              </Button>
+            </div>
           </div>
-
-          <Button
-            type="button"
-            size="sm"
-            variant="secondary"
-            onClick={resetFilters}
-            className="mb-0 h-9 shrink-0 self-end px-4"
-          >
-            Reset
-          </Button>
         </div>
       ) : (
       <FilterBar className="mb-0 items-end">

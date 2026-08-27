@@ -75,6 +75,7 @@ type EntryRow = RowDataPacket & {
   entry_type: string;
   faculty_staff_link_id: number | null;
   room_label: string | null;
+  custom_label: string | null;
   faculty_name?: string | null;
   faculty_hrms_id?: string | null;
 };
@@ -91,7 +92,28 @@ export type AssignmentInput = {
   hrmsEmployeeId?: string | null;
   facultyName?: string | null;
   roomLabel?: string | null;
+  /** Label for free/special periods (CRT, Games, Library, etc.) */
+  customLabel?: string | null;
 };
+
+/** Free/special period: labeled activity without an EMS subject (CRT, Games, etc.). */
+export function isFreePeriodAssignment(a: {
+  subjectId?: number | null;
+  customLabel?: string | null;
+}): boolean {
+  const label = (a.customLabel ?? "").trim();
+  const subjectId = a.subjectId == null ? 0 : Number(a.subjectId);
+  return label.length > 0 && (!Number.isFinite(subjectId) || subjectId <= 0);
+}
+
+export function isAssignedEntry(entry: {
+  subject_id?: number | null;
+  faculty_staff_link_id?: number | null;
+  custom_label?: string | null;
+}): boolean {
+  if ((entry.custom_label ?? "").trim()) return true;
+  return Boolean(entry.subject_id && entry.faculty_staff_link_id);
+}
 
 export type EmsSubject = {
   id: number;
@@ -425,12 +447,14 @@ export async function getEmsSubjectsByIds(ids: number[]) {
 
 /**
  * Resolve assignment subject fields from EMS (source of truth).
- * Client-provided code/name/type are ignored.
+ * Client-provided code/name/type are ignored for subject classes.
+ * Free/special periods (customLabel only) are passed through unchanged.
  */
 export async function resolveAssignmentSubjectsFromEms(
   assignments: AssignmentInput[],
 ) {
   const ids = assignments
+    .filter((a) => !isFreePeriodAssignment(a))
     .map((a) => Number(a.subjectId))
     .filter((id) => Number.isFinite(id) && id > 0);
   const emsMap = await getEmsSubjectsByIds(ids);
@@ -442,6 +466,18 @@ export async function resolveAssignmentSubjectsFromEms(
   }
 
   return assignments.map((a) => {
+    if (isFreePeriodAssignment(a)) {
+      const customLabel = String(a.customLabel ?? "").trim();
+      return {
+        ...a,
+        subjectId: null,
+        subjectCode: null,
+        subjectName: null,
+        subjectTypeSnapshot: null,
+        entryType: "other" as const,
+        customLabel,
+      };
+    }
     const ems = emsMap.get(Number(a.subjectId))!;
     const mapped = mapEmsTypeToEntryType(ems.type);
     const entryType =
@@ -455,6 +491,7 @@ export async function resolveAssignmentSubjectsFromEms(
       subjectName: ems.name,
       subjectTypeSnapshot: ems.type,
       entryType,
+      customLabel: null,
     };
   });
 }
@@ -649,6 +686,7 @@ function buildGrid(
           facultyName: string | null;
           facultyHrmsId: string | null;
           roomLabel: string | null;
+          customLabel: string | null;
         };
       }
     >
@@ -678,6 +716,7 @@ function buildGrid(
               facultyName: found.faculty_name ?? null,
               facultyHrmsId: found.faculty_hrms_id ?? null,
               roomLabel: found.room_label,
+              customLabel: found.custom_label ?? null,
             }
           : null,
       };
@@ -858,6 +897,7 @@ export async function getTimetablePlanner(filters: TimetablePlannerFilters = {})
       facultyStaffLinkId: e.faculty_staff_link_id,
       facultyName: e.faculty_name,
       roomLabel: e.room_label,
+      customLabel: e.custom_label ?? null,
     })),
     subjects,
     faculty,
@@ -914,7 +954,7 @@ export async function validatePlanAssignments(
   for (const slot of classSlots) {
     const key = `${slot.dayOfWeek}:${slot.id}`;
     const entry = entryByKey.get(key);
-    if (!entry || !entry.subject_id || !entry.faculty_staff_link_id) {
+    if (!entry || !isAssignedEntry(entry)) {
       unassigned.push(`${slot.dayLabel} ${slot.label} (${slot.startTime}-${slot.endTime})`);
     }
   }
@@ -1002,7 +1042,7 @@ export async function validatePlanAssignments(
 
   return {
     ok,
-    assignedCount: entries.filter((e) => e.subject_id && e.faculty_staff_link_id).length,
+    assignedCount: entries.filter((e) => isAssignedEntry(e)).length,
     unassignedSlots: unassigned,
     sectionClashes,
     facultyClashes,
@@ -1062,8 +1102,13 @@ export async function saveTimetableDraft(input: {
     if (!classSlotIds.has(a.timingSlotId)) {
       throw new Error(`Cannot assign class on non-CLASS slot ${a.timingSlotId}`);
     }
+    if (isFreePeriodAssignment(a)) {
+      continue;
+    }
     if (!a.subjectId || (!a.facultyStaffLinkId && !a.hrmsEmployeeId)) {
-      throw new Error("Subject and Faculty are required for CLASS slots");
+      throw new Error(
+        "Subject and Faculty are required for class periods (or enter a free/special label like CRT / Games)",
+      );
     }
   }
 
@@ -1181,12 +1226,14 @@ export async function saveTimetableDraft(input: {
     for (const a of verifiedAssignments) {
       const day = toDayCode(String(a.dayOfWeek));
       const facultyLinkId = await resolveFacultyLink(a);
+      const customLabel = (a.customLabel ?? "").trim() || null;
       await conn.execute(
         `
         INSERT INTO ap_timetable_entries
           (plan_id, day_of_week, period_slot_id, timing_slot_id, subject_id, subject_code,
-           subject_name, subject_type_snapshot, entry_type, faculty_staff_link_id, room_label)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           subject_name, subject_type_snapshot, entry_type, faculty_staff_link_id, room_label,
+           custom_label)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `,
         [
           planId,
@@ -1200,6 +1247,7 @@ export async function saveTimetableDraft(input: {
           a.entryType ?? "theory",
           facultyLinkId,
           a.roomLabel ?? null,
+          customLabel,
         ],
       );
     }
@@ -1438,6 +1486,7 @@ export async function copyTimetablePlan(input: {
       entryType: (entry.entry_type as "theory" | "lab" | "other") || "theory",
       facultyStaffLinkId: entry.faculty_staff_link_id,
       roomLabel: entry.room_label,
+      customLabel: entry.custom_label,
     });
   }
 

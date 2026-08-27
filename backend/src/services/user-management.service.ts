@@ -52,6 +52,8 @@ export type ManagedUserListItem = {
 
 export type ManagedUserDetail = ManagedUserListItem & {
   permissions: string[];
+  rolePermissions: string[];
+  directPermissions: string[];
   createdAt: string | null;
   updatedAt: string | null;
 };
@@ -340,6 +342,8 @@ export async function getManagedUser(userId: number): Promise<ManagedUserDetail 
   return {
     ...mapListItem(row, roles),
     permissions: authz.permissions,
+    rolePermissions: authz.rolePermissions,
+    directPermissions: authz.directPermissions,
     createdAt: iso(row.created_at),
     updatedAt: iso(row.updated_at),
   };
@@ -1180,4 +1184,67 @@ export async function deleteManagedUser(input: {
   });
 
   return { deleted: true, id: input.userId };
+}
+
+export async function setUserPermissions(
+  userId: number,
+  permissionKeys: string[],
+  revokedKeys: string[],
+  actionByUserId: number,
+) {
+  // Validate that user exists
+  const rows = await queryAcademic<{ id: number }[]>(
+    `SELECT id FROM ap_users WHERE id = ? LIMIT 1`,
+    [userId],
+  );
+  if (!rows.length) {
+    fail(404, "User not found");
+  }
+
+  const uniqueKeys = [...new Set(permissionKeys.map((k) => k.trim()).filter(Boolean))];
+  const uniqueRevoked = [...new Set(revokedKeys.map((k) => k.trim()).filter(Boolean))];
+
+  // Remove overlapping keys from revoked if they are in granted
+  const finalRevoked = uniqueRevoked.filter((k) => !uniqueKeys.includes(k));
+
+  const allKeys = [...new Set([...uniqueKeys, ...finalRevoked])];
+
+  await executeAcademic(`DELETE FROM ap_user_permissions WHERE user_id = ?`, [userId]);
+
+  if (allKeys.length > 0) {
+    const placeholders = allKeys.map(() => "?").join(",");
+    const permRows = await queryAcademic<{ id: number; permission_key: string }[]>(
+      `SELECT id, permission_key FROM ap_permissions WHERE permission_key IN (${placeholders})`,
+      allKeys,
+    );
+
+    if (permRows.length !== allKeys.length) {
+      const found = new Set(permRows.map((r) => r.permission_key));
+      const missing = allKeys.filter((k) => !found.has(k));
+      fail(400, `Unknown permission keys: ${missing.join(", ")}`);
+    }
+
+    const insertValues: any[] = [];
+    for (const r of permRows) {
+      const mode = uniqueKeys.includes(r.permission_key) ? "grant" : "revoke";
+      insertValues.push([userId, r.id, mode]);
+    }
+    const insertPlaceholders = insertValues.map(() => "(?, ?, ?)").join(",");
+    const flatArgs = insertValues.flat();
+
+    await executeAcademic(
+      `INSERT INTO ap_user_permissions (user_id, permission_id, mode) VALUES ${insertPlaceholders}`,
+      flatArgs,
+    );
+  }
+
+  invalidateAuthzCache({ userId });
+
+  await writeAuditLog({
+    actorUserId: actionByUserId,
+    action: "user.permissions.updated",
+    entityType: "ap_user",
+    entityId: userId,
+    newValue: { directPermissions: uniqueKeys, revokedPermissions: finalRevoked },
+  });
 }

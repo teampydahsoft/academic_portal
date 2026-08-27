@@ -7,6 +7,11 @@ import { Card } from "@/components/ui/Card";
 import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
 import { FilterBar, FilterField } from "@/components/ui/FilterBar";
 import { StatusBadge } from "@/components/ui/StatusBadge";
+import {
+  MobileDataCardHeader,
+  MobileDataCardGrid,
+  MobileDataCardField,
+} from "@/components/ui/MobileDataCard";
 import { apiFetch } from "@/lib/api";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { useAcademicContext } from "@/components/layout/AcademicProvider";
@@ -21,6 +26,7 @@ import {
 } from "@/features/user-management/types";
 import { RolesPermissionsPanel } from "@/features/user-management/RolesPermissionsPanel";
 import { CreateUserPanel } from "@/features/user-management/CreateUserPanel";
+import { UserPermissionsModal } from "@/features/user-management/UserPermissionsModal";
 
 type LoadState =
   | { status: "loading" }
@@ -51,6 +57,7 @@ export function UserManagementView() {
   const [detail, setDetail] = useState<ManagedUser | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [rolesOpen, setRolesOpen] = useState(false);
+  const [permissionsOpen, setPermissionsOpen] = useState(false);
   const [scopeOpen, setScopeOpen] = useState(false);
   const [scopeTarget, setScopeTarget] = useState<RoleAssignment | null>(null);
   const [busy, setBusy] = useState(false);
@@ -481,6 +488,27 @@ export function UserManagementView() {
                 ? "No portal users yet. Open Create User and import an HRMS login account."
                 : "No Academic Portal users match these filters."
             }
+            mobileRender={(row) => (
+              <div className="flex flex-col gap-1">
+                <MobileDataCardHeader
+                  title={row.name}
+                  status={<StatusBadge status={row.isActive ? "active" : "inactive"} />}
+                  secondary={
+                    <div className="flex flex-col gap-0.5">
+                      <span>{row.email || "—"}</span>
+                      {row.isLocalBootstrap && <span className="text-xs text-brand-600">Local Bootstrap Account</span>}
+                    </div>
+                  }
+                />
+                <MobileDataCardGrid>
+                  <MobileDataCardField 
+                    label="College / Branch" 
+                    value={row.roles.length ? row.roles.slice(0, 2).map((r) => formatScope(r)).join(", ") + (row.roles.length > 2 ? ` (+${row.roles.length - 2} more)` : "") : "—"} 
+                  />
+                  <MobileDataCardField label="Last login" value={formatLastLogin(row.lastLoginAt)} />
+                </MobileDataCardGrid>
+              </div>
+            )}
             onRowClick={(row) => setSelectedId(row.id)}
           />
         </>
@@ -503,6 +531,10 @@ export function UserManagementView() {
           onEditRoles={() => {
             if (detail && isBootstrapSuperAdmin(detail)) return;
             setRolesOpen(true);
+          }}
+          onEditPermissions={() => {
+            if (detail && isBootstrapSuperAdmin(detail)) return;
+            setPermissionsOpen(true);
           }}
           onEditScope={(assignment) => {
             if (detail && isBootstrapSuperAdmin(detail)) return;
@@ -555,6 +587,18 @@ export function UserManagementView() {
           }}
         />
       ) : null}
+
+      {permissionsOpen && detail && canManage ? (
+        <UserPermissionsModal
+          user={detail}
+          onClose={() => setPermissionsOpen(false)}
+          onSaved={async (user) => {
+            setPermissionsOpen(false);
+            setDetail(user);
+            await Promise.all([loadUsers(), loadStats()]);
+          }}
+        />
+      ) : null}
     </div>
   );
 }
@@ -568,6 +612,7 @@ function UserDetailModal(props: {
   busy: boolean;
   onClose: () => void;
   onEditRoles: () => void;
+  onEditPermissions: () => void;
   onEditScope: (assignment: RoleAssignment) => void;
   onActivate: () => void;
   onDeactivate: () => void;
@@ -862,23 +907,50 @@ function UserDetailModal(props: {
 
             {/* 3 · Permissions */}
             <section className="flex min-h-0 flex-col rounded-xl border border-emerald-200 bg-emerald-50/30 p-3">
-              <h4 className="mb-2 text-sm font-semibold text-navy-900">Permissions</h4>
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                <h4 className="text-sm font-semibold text-navy-900">Permissions</h4>
+                {canManageRolesAndScope ? (
+                  <Button size="sm" variant="secondary" onClick={props.onEditPermissions}>
+                    Edit direct permissions
+                  </Button>
+                ) : null}
+              </div>
               <p className="mb-2 text-xs text-slate-500">
-                Derived from assigned roles (read-only). Change roles to update permissions.
+                Derived from assigned roles (read-only) and direct permissions.
               </p>
               <div className="min-h-0 flex-1 overflow-y-auto">
                 <div className="flex flex-wrap gap-1.5">
-                  {(user.permissions ?? []).length ? (
-                    (user.permissions ?? []).map((p) => (
-                      <span
-                        key={p}
-                        className="rounded bg-white px-1.5 py-0.5 text-[11px] text-slate-700 ring-1 ring-border"
-                      >
-                        {p}
-                      </span>
-                    ))
+                  {(user.permissions ?? []).length > 0 || (user.revokedPermissions ?? []).length > 0 ? (
+                    <>
+                      {(user.permissions ?? []).map((p) => {
+                        const isRolePerm = user.rolePermissions?.includes(p);
+                        const isDirectPerm = user.directPermissions?.includes(p);
+                        return (
+                          <span
+                            key={p}
+                            className={`rounded px-1.5 py-0.5 text-[11px] ring-1 ${
+                              isDirectPerm && !isRolePerm
+                                ? "bg-blue-50 text-blue-700 ring-blue-300 font-medium"
+                                : "bg-white text-slate-700 ring-border"
+                            }`}
+                            title={isDirectPerm && !isRolePerm ? "Direct permission" : "Inherited from role"}
+                          >
+                            {p}
+                          </span>
+                        );
+                      })}
+                      {(user.revokedPermissions ?? []).map((p) => (
+                        <span
+                          key={`revoked-${p}`}
+                          className="rounded px-1.5 py-0.5 text-[11px] ring-1 bg-red-50 text-red-700 ring-red-300 font-medium line-through opacity-75"
+                          title="Explicitly revoked"
+                        >
+                          {p}
+                        </span>
+                      ))}
+                    </>
                   ) : (
-                    <p className="text-sm text-slate-500">No permissions derived from roles.</p>
+                    <p className="text-sm text-slate-500">No permissions derived from roles or directly.</p>
                   )}
                 </div>
               </div>

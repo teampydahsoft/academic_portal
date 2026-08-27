@@ -7,6 +7,12 @@ import { Card } from "@/components/ui/Card";
 import { DataTable } from "@/components/ui/DataTable";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Button } from "@/components/ui/Button";
+import {
+  MobileDataCardHeader,
+  MobileDataCardGrid,
+  MobileDataCardField,
+  MobileDataCardActions,
+} from "@/components/ui/MobileDataCard";
 import { apiFetch } from "@/lib/api";
 
 type FacultyRow = {
@@ -170,6 +176,25 @@ export function DepartmentDetailView({ departmentId }: Props) {
             ? "No faculty in this department."
             : "No employees match the current search."
         }
+        mobileRender={(row) => (
+          <div className="flex flex-col gap-1">
+            <MobileDataCardHeader
+              title={row.name}
+              secondary={row.code}
+              status={<StatusBadge status={row.linkStatus === "linked" ? "Active" : "Pending"} />}
+            />
+            <MobileDataCardGrid>
+              <MobileDataCardField label="Division" value={row.division} />
+              <MobileDataCardField label="Designation" value={row.designation} />
+              <MobileDataCardField label="Group" value={row.employeeGroup || "—"} />
+            </MobileDataCardGrid>
+            <MobileDataCardActions>
+              <Link href={`/faculty-departments/faculty/${row.hrmsEmployeeId}`}>
+                <Button size="sm" variant="secondary">View</Button>
+              </Link>
+            </MobileDataCardActions>
+          </div>
+        )}
         columns={[
           {
             key: "name",

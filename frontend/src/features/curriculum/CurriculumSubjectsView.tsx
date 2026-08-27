@@ -8,6 +8,11 @@ import { Card } from "@/components/ui/Card";
 import { StatCard } from "@/components/ui/StatCard";
 import { Button } from "@/components/ui/Button";
 import { FilterBar, FilterField } from "@/components/ui/FilterBar";
+import {
+  MobileDataCardHeader,
+  MobileDataCardGrid,
+  MobileDataCardField,
+} from "@/components/ui/MobileDataCard";
 import { apiFetch } from "@/lib/api";
 import { cn } from "@/lib/cn";
 
@@ -665,6 +670,15 @@ export function CurriculumSubjectsView() {
                     <DataTable
                       rows={group.subjects}
                       rowKey={(row) => String(row.mappingId)}
+                      mobileRender={(row) => (
+                        <div className="flex flex-col gap-1">
+                          <MobileDataCardHeader title={row.name} secondary={row.code} status={<StatusBadge status={row.status} />} />
+                          <MobileDataCardGrid>
+                            <MobileDataCardField label="Type" value={<span className="capitalize text-slate-700">{row.type}</span>} />
+                            <MobileDataCardField label="Credits" value={row.credits} />
+                          </MobileDataCardGrid>
+                        </div>
+                      )}
                       columns={[
                         { key: "code", header: "Code", render: (row) => row.code },
                         { key: "name", header: "Subject", render: (row) => row.name },
@@ -699,6 +713,17 @@ export function CurriculumSubjectsView() {
         <DataTable
           rows={filteredRows}
           rowKey={(row) => String(row.mappingId)}
+          mobileRender={(row) => (
+            <div className="flex flex-col gap-1">
+              <MobileDataCardHeader title={row.name} secondary={row.code} status={<StatusBadge status={row.status} />} />
+              <MobileDataCardGrid>
+                <MobileDataCardField label="College/Course" value={`${row.collegeName} · ${row.courseName}`} />
+                <MobileDataCardField label="Branch/Batch" value={`${row.branchName} · ${row.batch}`} />
+                <MobileDataCardField label="Year/Sem" value={`Y${row.year ?? "—"} S${row.semester ?? "—"}`} />
+                <MobileDataCardField label="Type/Credits" value={<span className="capitalize">{row.type} ({row.credits}cr)</span>} />
+              </MobileDataCardGrid>
+            </div>
+          )}
           columns={[
             {
               key: "regulation",

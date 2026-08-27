@@ -283,6 +283,25 @@ async function main() {
     console.log("Created ap_role_permissions");
   }
 
+  // --- ap_user_permissions ---
+  if (!(await tableExists("ap_user_permissions"))) {
+    await exec(`
+      CREATE TABLE ap_user_permissions (
+        id INT UNSIGNED NOT NULL AUTO_INCREMENT,
+        user_id BIGINT UNSIGNED NOT NULL,
+        permission_id INT UNSIGNED NOT NULL,
+        created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (id),
+        UNIQUE KEY uq_user_permission (user_id, permission_id),
+        KEY idx_user_permissions_user (user_id),
+        KEY idx_user_permissions_perm (permission_id),
+        CONSTRAINT fk_user_permissions_user FOREIGN KEY (user_id) REFERENCES ap_users(id),
+        CONSTRAINT fk_user_permissions_perm FOREIGN KEY (permission_id) REFERENCES ap_permissions(id)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+    console.log("Created ap_user_permissions");
+  }
+
   const permRows = await queryAcademic<(RowDataPacket & { id: number; permission_key: string })[]>(
     `SELECT id, permission_key FROM ap_permissions`,
   );

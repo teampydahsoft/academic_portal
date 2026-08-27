@@ -8,6 +8,12 @@ import { Card } from "@/components/ui/Card";
 import { DataTable } from "@/components/ui/DataTable";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Button } from "@/components/ui/Button";
+import {
+  MobileDataCardHeader,
+  MobileDataCardGrid,
+  MobileDataCardField,
+  MobileDataCardActions,
+} from "@/components/ui/MobileDataCard";
 import { apiFetch } from "@/lib/api";
 
 type FacultyRow = {
@@ -366,6 +372,20 @@ export function FacultyDepartmentsView() {
             rowKey={(r) => r.id}
             emptyMessage="No departments found."
             onRowClick={(row) => router.push(`/faculty-departments/${row.id}`)}
+            mobileRender={(row) => (
+              <div className="flex flex-col gap-1">
+                <MobileDataCardHeader title={row.name} />
+                <MobileDataCardGrid>
+                  <MobileDataCardField label="Division / Campus" value={row.division} />
+                  <MobileDataCardField label="Faculty" value={row.facultyCount} />
+                </MobileDataCardGrid>
+                <MobileDataCardActions>
+                  <Link href={`/faculty-departments/${row.id}`} onClick={(e) => e.stopPropagation()}>
+                    <Button size="sm" variant="secondary">View</Button>
+                  </Link>
+                </MobileDataCardActions>
+              </div>
+            )}
             columns={[
               {
                 key: "name",
@@ -486,6 +506,25 @@ export function FacultyDepartmentsView() {
             rows={faculty}
             rowKey={(r) => r.hrmsEmployeeId}
             emptyMessage="No faculty match the current filters."
+            mobileRender={(row) => (
+              <div className="flex flex-col gap-1">
+                <MobileDataCardHeader
+                  title={row.name}
+                  secondary={row.code}
+                  status={
+                    <StatusBadge
+                      status={row.staffLinkId ? "active" : "inactive"}
+                    />
+                  }
+                />
+                <MobileDataCardGrid>
+                  <MobileDataCardField label="Division" value={row.division} />
+                  <MobileDataCardField label="Department" value={row.department} />
+                  <MobileDataCardField label="Designation" value={row.designation} />
+                  <MobileDataCardField label="Group" value={row.employeeGroup || "—"} />
+                </MobileDataCardGrid>
+              </div>
+            )}
             columns={[
               {
                 key: "name",

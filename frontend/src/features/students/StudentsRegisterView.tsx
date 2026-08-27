@@ -4,6 +4,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { DataTable } from "@/components/ui/DataTable";
 import { StatusBadge } from "@/components/ui/StatusBadge";
+import {
+  MobileDataCardHeader,
+  MobileDataCardGrid,
+  MobileDataCardField,
+} from "@/components/ui/MobileDataCard";
 import { useAcademicContext } from "@/components/layout/AcademicProvider";
 import { StudentAvatar } from "@/features/students/StudentAvatar";
 import { StudentDetailDrawer } from "@/features/students/StudentDetailDrawer";
@@ -458,6 +463,34 @@ export function StudentsRegisterView() {
           rowKey={(row) => row.id}
           onRowClick={(row) => setSelectedId(row.id)}
           emptyMessage={loading ? " " : "No students match the selected page filters."}
+          mobileRender={(row) => (
+            <div className="flex flex-col gap-1">
+              <MobileDataCardHeader
+                title={
+                  <div className="flex items-center gap-2">
+                    <StudentAvatar
+                      name={row.name}
+                      photo={row.photo}
+                      studentId={row.id}
+                      hasPhoto={Boolean(row.hasPhoto)}
+                      size="sm"
+                    />
+                    <div className="min-w-0">
+                      <p className="text-base font-semibold leading-tight">{row.name}</p>
+                      <p className="text-xs font-normal text-slate-500 mt-0.5">Adm: {row.admissionNo}</p>
+                    </div>
+                  </div>
+                }
+                status={<StatusBadge status={row.status} />}
+              />
+              <MobileDataCardGrid>
+                <MobileDataCardField label="PIN / Roll" value={row.rollNo || row.admissionNo || "—"} />
+                <MobileDataCardField label="Attendance" value={`${row.attendance}%`} />
+                <MobileDataCardField label="Branch / Section" value={`${row.branch} ${row.section ? `- ${row.section}` : ""}`} />
+                <MobileDataCardField label="Risk" value={<StatusBadge status={row.risk} />} />
+              </MobileDataCardGrid>
+            </div>
+          )}
           columns={[
             {
               key: "sno",
@@ -515,8 +548,8 @@ export function StudentsRegisterView() {
                 />
               ),
               render: (row) =>
-                row.rollNo ? (
-                  <span className="font-mono text-[13px] text-navy-900">{row.rollNo}</span>
+                row.rollNo || row.admissionNo ? (
+                  <span className="font-mono text-[13px] text-navy-900">{row.rollNo || row.admissionNo}</span>
                 ) : (
                   <span className="text-slate-400">—</span>
                 ),
