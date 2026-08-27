@@ -59,7 +59,7 @@ export function Sidebar({ open, collapsed, onClose, onToggleCollapsed }: Props) 
 
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-50 flex h-screen flex-col border-r border-border bg-white text-slate-700 transition-[width,transform] duration-200 lg:static lg:translate-x-0",
+          "fixed inset-y-0 left-0 z-50 flex h-dvh max-h-dvh flex-col border-r border-border bg-white text-slate-700 transition-[width,transform] duration-200 lg:static lg:h-full lg:max-h-none lg:translate-x-0",
           collapsed ? "w-[72px]" : "w-[220px]",
           open ? "translate-x-0" : "-translate-x-full lg:translate-x-0",
         )}
@@ -160,7 +160,7 @@ export function Sidebar({ open, collapsed, onClose, onToggleCollapsed }: Props) 
 
         <div
           className={cn(
-            "shrink-0 border-t border-border px-2 py-2.5",
+            "shrink-0 border-t border-border px-2 pt-2.5 pb-[max(0.75rem,env(safe-area-inset-bottom))]",
             collapsed && "px-1.5",
           )}
         >

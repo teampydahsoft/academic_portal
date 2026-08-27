@@ -42,6 +42,7 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = {
   themeColor: "#1f3a5f",
+  viewportFit: "cover",
 };
 
 export default function RootLayout({
@@ -50,9 +51,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="h-full overflow-hidden" suppressHydrationWarning>
+    <html lang="en" className="h-dvh overflow-hidden" suppressHydrationWarning>
       <body
-        className={`${sourceSans.variable} h-full overflow-hidden antialiased`}
+        className={`${sourceSans.variable} h-dvh overflow-hidden antialiased`}
         suppressHydrationWarning
       >
         <PwaInstallProvider>{children}</PwaInstallProvider>
