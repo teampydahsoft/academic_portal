@@ -59,14 +59,14 @@ export function Sidebar({ open, collapsed, onClose, onToggleCollapsed }: Props) 
 
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-50 flex h-dvh max-h-dvh flex-col border-r border-border bg-white text-slate-700 transition-[width,transform] duration-200 lg:static lg:h-full lg:max-h-none lg:translate-x-0",
+          "fixed inset-y-0 left-0 z-50 flex h-dvh max-h-dvh flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-[width,transform] duration-200 lg:static lg:h-full lg:max-h-none lg:translate-x-0",
           collapsed ? "w-[72px]" : "w-[220px]",
           open ? "translate-x-0" : "-translate-x-full lg:translate-x-0",
         )}
       >
         <div
           className={cn(
-            "flex shrink-0 items-center gap-2 border-b border-border px-3 py-3",
+            "flex shrink-0 items-center gap-2 border-b border-sidebar-border px-3 py-3",
             collapsed && "justify-center px-2",
           )}
         >
@@ -78,17 +78,17 @@ export function Sidebar({ open, collapsed, onClose, onToggleCollapsed }: Props) 
           />
           {!collapsed ? (
             <div className="min-w-0 flex-1">
-              <p className="truncate text-[11px] font-medium uppercase tracking-[0.12em] text-brand-700">
+              <p className="truncate text-[11px] font-medium uppercase tracking-[0.12em] text-brand-600">
                 Pydah Group
               </p>
-              <h1 className="truncate text-sm font-semibold text-slate-700">
+              <h1 className="truncate text-sm font-semibold text-sidebar-foreground">
                 Academic Portal
               </h1>
             </div>
           ) : null}
           <button
             type="button"
-            className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100 lg:hidden"
+            className="rounded-md p-1.5 text-sidebar-muted hover:bg-sidebar-hover lg:hidden"
             onClick={onClose}
             aria-label="Close navigation"
           >
@@ -96,7 +96,7 @@ export function Sidebar({ open, collapsed, onClose, onToggleCollapsed }: Props) 
           </button>
           <button
             type="button"
-            className="hidden rounded-md p-1.5 text-slate-500 hover:bg-slate-100 lg:inline-flex"
+            className="hidden rounded-md p-1.5 text-sidebar-muted hover:bg-sidebar-hover lg:inline-flex"
             onClick={onToggleCollapsed}
             aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           >
@@ -112,11 +112,11 @@ export function Sidebar({ open, collapsed, onClose, onToggleCollapsed }: Props) 
           {groups.map((group) => (
             <div key={group.title} className={cn("mb-3", collapsed && "mb-2")}>
               {!collapsed ? (
-                <p className="mb-1 px-2 text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                <p className="mb-1 px-2 text-[10px] font-semibold uppercase tracking-wider text-sidebar-muted">
                   {group.title}
                 </p>
               ) : (
-                <div className="mx-auto mb-1 h-px w-6 bg-slate-200" />
+                <div className="mx-auto mb-1 h-px w-6 bg-sidebar-border" />
               )}
               <ul className="space-y-0.5">
                 {group.items.map((item) => {
@@ -133,8 +133,8 @@ export function Sidebar({ open, collapsed, onClose, onToggleCollapsed }: Props) 
                           "group relative flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] font-medium transition-colors",
                           collapsed && "justify-center px-2",
                           active
-                            ? "bg-brand-50 text-brand-700"
-                            : "text-slate-500 hover:bg-slate-50 hover:text-slate-700",
+                            ? "bg-sidebar-active text-sidebar-foreground"
+                            : "text-sidebar-muted hover:bg-sidebar-hover hover:text-sidebar-foreground",
                         )}
                       >
                         {active ? (
@@ -145,7 +145,7 @@ export function Sidebar({ open, collapsed, onClose, onToggleCollapsed }: Props) 
                             "h-4 w-4 shrink-0",
                             active
                               ? "text-brand-600"
-                              : "text-slate-400 group-hover:text-slate-500",
+                              : "text-sidebar-muted group-hover:text-sidebar-foreground",
                           )}
                         />
                         {!collapsed ? <span className="truncate">{item.label}</span> : null}
@@ -160,7 +160,7 @@ export function Sidebar({ open, collapsed, onClose, onToggleCollapsed }: Props) 
 
         <div
           className={cn(
-            "shrink-0 border-t border-border px-2 pt-2.5 pb-[max(0.75rem,env(safe-area-inset-bottom))]",
+            "shrink-0 border-t border-sidebar-border px-2 pt-2.5 pb-[max(0.75rem,env(safe-area-inset-bottom))]",
             collapsed && "px-1.5",
           )}
         >
@@ -174,7 +174,7 @@ export function Sidebar({ open, collapsed, onClose, onToggleCollapsed }: Props) 
                   setProfileOpen(true);
                   onClose();
                 }}
-                className="flex h-9 w-9 items-center justify-center rounded-md text-slate-500 transition hover:bg-slate-50 disabled:cursor-default disabled:hover:bg-transparent"
+                className="flex h-9 w-9 items-center justify-center rounded-md text-sidebar-muted transition hover:bg-sidebar-hover disabled:cursor-default disabled:hover:bg-transparent"
                 title={user?.name || "Profile"}
                 aria-label="Profile"
               >
@@ -183,7 +183,7 @@ export function Sidebar({ open, collapsed, onClose, onToggleCollapsed }: Props) 
               <button
                 type="button"
                 onClick={() => void logout()}
-                className="flex h-9 w-9 items-center justify-center rounded-md text-slate-500 transition hover:bg-slate-50"
+                className="flex h-9 w-9 items-center justify-center rounded-md text-sidebar-muted transition hover:bg-sidebar-hover"
                 title="Sign out"
                 aria-label="Sign out"
               >
@@ -200,17 +200,17 @@ export function Sidebar({ open, collapsed, onClose, onToggleCollapsed }: Props) 
                   setProfileOpen(true);
                   onClose();
                 }}
-                className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left transition hover:bg-slate-50 disabled:cursor-default disabled:hover:bg-transparent"
+                className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left transition hover:bg-sidebar-hover disabled:cursor-default disabled:hover:bg-transparent"
                 title={canOpenProfile ? "View / edit your profile" : undefined}
               >
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-slate-100 text-slate-500">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-sidebar-active text-sidebar-muted">
                   <UserRound className="h-4 w-4" />
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[13px] font-medium text-slate-700">
+                  <span className="block truncate text-[13px] font-medium text-sidebar-foreground">
                     {user?.name || "Signed in"}
                   </span>
-                  <span className="block truncate text-[11px] text-slate-500">
+                  <span className="block truncate text-[11px] text-sidebar-muted">
                     {roleLabel || user?.email || user?.username || "HRMS account"}
                   </span>
                 </span>
@@ -218,9 +218,9 @@ export function Sidebar({ open, collapsed, onClose, onToggleCollapsed }: Props) 
               <button
                 type="button"
                 onClick={() => void logout()}
-                className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] font-medium text-slate-500 transition hover:bg-slate-50 hover:text-slate-700"
+                className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] font-medium text-sidebar-muted transition hover:bg-sidebar-hover hover:text-sidebar-foreground"
               >
-                <LogOut className="h-4 w-4 shrink-0 text-slate-400" />
+                <LogOut className="h-4 w-4 shrink-0 text-sidebar-muted" />
                 Sign out
               </button>
             </div>

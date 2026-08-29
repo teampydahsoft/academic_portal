@@ -25,12 +25,12 @@ export function TopHeader({ onMenuClick }: Props) {
   const title = titleFromPath(pathname);
 
   return (
-    <header className="z-20 shrink-0 border-b border-border bg-white">
+    <header className="z-20 shrink-0 border-b border-border bg-card shadow-sm">
       <div className="flex items-center justify-between gap-4 px-4 py-2.5 sm:px-5">
         <div className="flex min-w-0 items-center gap-2">
           <button
             type="button"
-            className="rounded-md border border-border p-2 text-slate-600 hover:bg-slate-50 lg:hidden"
+            className="rounded-md bg-sidebar p-2 text-sidebar-foreground hover:bg-sidebar-active lg:hidden"
             onClick={onMenuClick}
             aria-label="Open navigation"
           >

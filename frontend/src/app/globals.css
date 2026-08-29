@@ -31,9 +31,12 @@
   --foreground: #123B63; /* Primary Text */
   --card: #FFFFFF;
   --border: #E5EDF4; /* Light Border */
-  --sidebar: #FFFFFF;
+  --sidebar: #0F2742;
+  --sidebar-foreground: #EAF4FB;
   --sidebar-muted: #8A9AAC;
-  --sidebar-active: #e6f7f2;
+  --sidebar-active: #1a4d80;
+  --sidebar-border: #123B63;
+  --sidebar-hover: rgba(255, 255, 255, 0.06);
 }
 
 @theme inline {
@@ -59,8 +62,11 @@
   --color-brand-700: var(--brand-700);
   --color-brand-800: var(--brand-800);
   --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-muted: var(--sidebar-muted);
   --color-sidebar-active: var(--sidebar-active);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-hover: var(--sidebar-hover);
   --font-sans: var(--font-source-sans);
 }
 
@@ -92,11 +98,11 @@ select {
   font: inherit;
 }
 
-/* Smooth, thin sidebar scrollbar (light theme) */
+/* Smooth, thin sidebar scrollbar (dark theme) */
 .sidebar-scroll {
   scroll-behavior: smooth;
   scrollbar-width: thin;
-  scrollbar-color: rgba(148, 163, 184, 0.55) transparent;
+  scrollbar-color: rgba(138, 154, 172, 0.45) transparent;
   overscroll-behavior: contain;
 }
 
@@ -110,12 +116,12 @@ select {
 }
 
 .sidebar-scroll::-webkit-scrollbar-thumb {
-  background: rgba(148, 163, 184, 0.4);
+  background: rgba(138, 154, 172, 0.35);
   border-radius: 999px;
 }
 
 .sidebar-scroll::-webkit-scrollbar-thumb:hover {
-  background: rgba(100, 116, 139, 0.55);
+  background: rgba(138, 154, 172, 0.55);
 }
 
 /* Login illustration motion */
