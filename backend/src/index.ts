@@ -26,6 +26,7 @@ import { resultsRouter } from "./routes/results.route.js";
 import { usersRouter } from "./routes/users.route.js";
 import { rolesRouter } from "./routes/roles.route.js";
 import { permissionsRouter } from "./routes/permissions.route.js";
+import { myTimetableRouter } from "./routes/my-timetable.route.js";
 
 const app = express();
 
@@ -65,6 +66,7 @@ app.use("/api/timetables", timetablesRouter);
 app.use("/api/timings", timingRouter);
 app.use("/api/class-sessions", classSessionsRouter);
 app.use("/api/academic-dates", academicDatesRouter);
+app.use("/api/my-timetable", myTimetableRouter);
 app.use("/api/workload", workloadRouter);
 app.use("/api/attendance", attendanceRouter);
 app.use("/api/catalog", catalogRouter);

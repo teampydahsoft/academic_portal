@@ -2,6 +2,7 @@ import {
   AlertTriangle,
   Bell,
   BookOpen,
+  CalendarCheck,
   CalendarDays,
   CalendarRange,
   ClipboardCheck,
@@ -51,6 +52,12 @@ export const NAV_GROUPS: NavGroup[] = [
         href: "/students",
         icon: GraduationCap,
         permissions: ["students.view"],
+      },
+      {
+        label: "My Timetable",
+        href: "/my-timetable",
+        icon: CalendarCheck,
+        permissions: ["timetable.view"],
       },
       {
         label: "Attendance Calendar",

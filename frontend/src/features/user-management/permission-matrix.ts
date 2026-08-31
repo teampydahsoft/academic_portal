@@ -186,6 +186,12 @@ export const PERMISSION_MATRIX_MODULES: MatrixModuleDef[] = [
   },
   {
     group: "Academics",
+    label: "My Timetable",
+    href: "/my-timetable",
+    permissions: [asDef("timetable.view")],
+  },
+  {
+    group: "Academics",
     label: "Attendance Calendar",
     href: "/attendance-calendar",
     permissions: [asDef("attendance_calendar.view"), asDef("attendance_calendar.edit")],
