@@ -28,6 +28,16 @@ const MATRIX_KEYS = [
   "semester_dates.edit",
   "user_management.view",
   "user_management.manage_users",
+  "request.view",
+  "request.create",
+  "request.approve",
+  "request.workflow.manage",
+  "mentoring.view",
+  "mentoring.manage",
+  "mentoring.assign",
+  "mentoring.intervene",
+  "mentoring.case_manage",
+  "mentoring.escalate",
 ] as const;
 
 function assert(condition: unknown, message: string): asserts condition {
@@ -87,11 +97,11 @@ async function main() {
   );
 
   console.log("\nUnmapped cleanly (shared / placeholder nav):");
-  console.log("  - Mentoring & Risks → reuses students.view (no dedicated mentoring permission)");
   console.log("  - Pending/Reports/Alerts → reuse dashboard.view");
   console.log("  - Attendance Analytics → reuses attendance.view");
   console.log("  - No separate attendance.edit key (post covers edit-with-reason)");
   console.log("  - Timetable review uses timetable.edit (not a separate key)");
+  console.log("  - Mentoring & Risks → mentoring.view (+ students.view legacy nav access)");
 
   console.log("\nAll matrix compatibility checks passed.");
 }

@@ -9,6 +9,7 @@ import { useAcademicContext } from "@/components/layout/AcademicProvider";
 import { TimetableDaySection } from "./TimetableDaySection";
 import { TimetableSummary } from "./TimetableSummary";
 import { TimetableTodayPanel } from "./TimetableTodayPanel";
+import { DateSubstitutionsPanel } from "./DateSubstitutionsPanel";
 import {
   formatNavigationWeekLabel,
   TimetableWeekNavigation,
@@ -152,12 +153,15 @@ export function MyTimetableView() {
       ) : null}
 
       {isCurrentWeek ? (
-        <TimetableTodayPanel
-          todayDay={todayDay}
-          classesToday={classesToday}
-          todayCode={todayCode}
-          now={now}
-        />
+        <>
+          <TimetableTodayPanel
+            todayDay={todayDay}
+            classesToday={classesToday}
+            todayCode={todayCode}
+            now={now}
+          />
+          <DateSubstitutionsPanel sessionDate={now.toISOString().slice(0, 10)} />
+        </>
       ) : null}
 
       {weekClassCount === 0 ? (

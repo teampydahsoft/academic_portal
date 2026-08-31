@@ -5,7 +5,7 @@ import {
   scopedFilters,
   statusFromAuthzError,
 } from "../authz/require-permission.js";
-import { getMyTimetable } from "../services/my-timetable.service.js";
+import { getMyTimetable, getMyTimetableForDate } from "../services/my-timetable.service.js";
 
 export const myTimetableRouter = Router();
 
@@ -39,6 +39,29 @@ function filtersFromReq(req: AuthedRequest) {
     academicYear: str(req.query.academicYear),
   };
 }
+
+myTimetableRouter.get(
+  "/day",
+  requirePermission("timetable.view"),
+  async (req: AuthedRequest, res, next) => {
+    try {
+      const sessionDate = str(req.query.date);
+      if (!sessionDate) {
+        res.status(400).json({ message: "date query parameter is required (YYYY-MM-DD)" });
+        return;
+      }
+      const hrmsEmployeeId = req.authUser?.hrmsEmployeeId ?? null;
+      res.json(await getMyTimetableForDate(hrmsEmployeeId, sessionDate, filtersFromReq(req)));
+    } catch (error) {
+      const status = statusFromAuthzError(error);
+      if (status === 401 || status === 403) {
+        res.status(status).json({ message: (error as Error).message || "Forbidden" });
+        return;
+      }
+      next(error);
+    }
+  },
+);
 
 myTimetableRouter.get(
   "/",

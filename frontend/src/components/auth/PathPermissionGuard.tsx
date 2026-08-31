@@ -6,12 +6,20 @@ import { useAuth } from "@/components/auth/AuthProvider";
 import { NAV_GROUPS } from "@/lib/navigation";
 
 function requiredPermissionsForPath(pathname: string): string[] | null {
+  let bestMatch: { href: string; permissions: string[] | null } | null = null;
+
   for (const group of NAV_GROUPS) {
     for (const item of group.items) {
       if (pathname === item.href || pathname.startsWith(`${item.href}/`)) {
-        return item.permissions ?? null;
+        if (!bestMatch || item.href.length > bestMatch.href.length) {
+          bestMatch = { href: item.href, permissions: item.permissions ?? null };
+        }
       }
     }
+  }
+
+  if (pathname.startsWith("/settings/request-workflows")) {
+    return ["request.workflow.manage"];
   }
   if (pathname.startsWith("/settings")) {
     return ["settings.view"];
@@ -19,7 +27,8 @@ function requiredPermissionsForPath(pathname: string): string[] | null {
   if (pathname.startsWith("/user-management")) {
     return ["user_management.view", "user_management.manage_users"];
   }
-  return null;
+
+  return bestMatch?.permissions ?? null;
 }
 
 /** UX-only page gate. Backend remains the source of truth. */

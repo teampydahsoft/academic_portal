@@ -42,6 +42,7 @@ export type CommandCenterSummary = {
 
 import type { AttendanceSessionCard } from "@/features/attendance-posting/AttendanceTodayView";
 import type { WorkloadSummary } from "@/features/workload/StaffWorkloadView";
+import { RequestDashboardCard } from "@/features/requests/RequestDashboardCard";
 
 function todayIso() {
   const now = new Date();
@@ -81,6 +82,9 @@ export function DashboardView() {
   const canStudents = hasAnyPermission("students.view");
   const canFaculty = hasAnyPermission("faculty.view");
   const canTimetable = hasAnyPermission("timetable.view");
+  const canRequests = hasAnyPermission("request.view");
+  const canRequestCreate = hasPermission("request.create");
+  const canRequestApprove = hasPermission("request.approve");
 
   const [summary, setSummary] = useState<CommandCenterSummary | null>(null);
   const [attendance, setAttendance] = useState<AttendanceAnalytics | null>(null);
@@ -421,7 +425,14 @@ export function DashboardView() {
 
         {/* RIGHT COLUMN: Attention & Quick Actions */}
         <div className="space-y-6">
-          
+          {canRequests ? (
+            <RequestDashboardCard
+              canView={canRequests}
+              canCreate={canRequestCreate}
+              canApprove={canRequestApprove}
+            />
+          ) : null}
+
           {/* SECTION I — REQUIRES YOUR ATTENTION */}
           <Card className="border-l-4 border-l-amber-500">
             <h2 className="mb-4 text-base font-semibold text-navy-900 flex items-center gap-2">
@@ -547,6 +558,20 @@ export function DashboardView() {
                 <Link href="/results">
                   <Button variant="secondary" className="w-full justify-start text-sm bg-slate-50 hover:bg-slate-100 border-0">
                     View Results
+                  </Button>
+                </Link>
+              )}
+              {canRequests && (
+                <Link href="/requests">
+                  <Button variant="secondary" className="w-full justify-start text-sm bg-slate-50 hover:bg-slate-100 border-0">
+                    My Requests
+                  </Button>
+                </Link>
+              )}
+              {canRequestApprove && (
+                <Link href="/requests/pending">
+                  <Button variant="secondary" className="w-full justify-start text-sm bg-slate-50 hover:bg-slate-100 border-0">
+                    Pending Requests
                   </Button>
                 </Link>
               )}

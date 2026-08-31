@@ -27,6 +27,10 @@ import { usersRouter } from "./routes/users.route.js";
 import { rolesRouter } from "./routes/roles.route.js";
 import { permissionsRouter } from "./routes/permissions.route.js";
 import { myTimetableRouter } from "./routes/my-timetable.route.js";
+import { requestsRouter } from "./routes/requests.route.js";
+import { requestWorkflowsRouter } from "./routes/request-workflows.route.js";
+import { facultySubstitutionRouter } from "./routes/faculty-substitution.route.js";
+import { mentoringRouter } from "./routes/mentoring.route.js";
 
 const app = express();
 
@@ -67,6 +71,10 @@ app.use("/api/timings", timingRouter);
 app.use("/api/class-sessions", classSessionsRouter);
 app.use("/api/academic-dates", academicDatesRouter);
 app.use("/api/my-timetable", myTimetableRouter);
+app.use("/api/requests", requestsRouter);
+app.use("/api/request-workflows", requestWorkflowsRouter);
+app.use("/api/faculty-substitutions", facultySubstitutionRouter);
+app.use("/api/mentoring", mentoringRouter);
 app.use("/api/workload", workloadRouter);
 app.use("/api/attendance", attendanceRouter);
 app.use("/api/catalog", catalogRouter);

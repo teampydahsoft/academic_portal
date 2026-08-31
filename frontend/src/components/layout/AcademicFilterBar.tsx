@@ -46,8 +46,12 @@ export function AcademicFilterBar({ title = "Filters" }: Props) {
   const hidden = hiddenOnPath || isDashboard;
   const showSearch =
     pathname === "/students" || pathname.startsWith("/students/");
+  const isMentoringPage =
+    pathname === "/mentoring-risks" || pathname.startsWith("/mentoring-risks/");
+  const showStudentQuerySearch = showSearch || isMentoringPage;
   const isTimetablesPage =
     pathname === "/timetables" || pathname.startsWith("/timetables/");
+  const usesBatchProgressYear = isTimetablesPage || isMentoringPage;
 
   useEffect(() => {
     setSearchDraft(filters.q);
@@ -85,13 +89,13 @@ export function AcademicFilterBar({ title = "Filters" }: Props) {
   }, [showSearch]);
 
   useEffect(() => {
-    if (!showSearch) return;
+    if (!showStudentQuerySearch) return;
     const timer = window.setTimeout(() => {
       const next = searchDraft.trim();
       if (next !== filters.q) setFilters({ q: next });
     }, 300);
     return () => window.clearTimeout(timer);
-  }, [searchDraft, showSearch, filters.q, setFilters]);
+  }, [searchDraft, showStudentQuerySearch, filters.q, setFilters]);
 
   // Students list scoped by batch does not use Year / Semester filters.
   useEffect(() => {
@@ -100,9 +104,9 @@ export function AcademicFilterBar({ title = "Filters" }: Props) {
     setFilters({ year: "all", semester: "all" });
   }, [showSearch, filters.batch, filters.year, filters.semester, setFilters]);
 
-  // Timetables: prefill Year + Semester from Regular students in the selected batch.
+  // Timetables / Mentoring: prefill Year + Semester from Regular students in the selected batch.
   useEffect(() => {
-    if (!isTimetablesPage) return;
+    if (!usesBatchProgressYear) return;
     if (
       filters.collegeId === "all" ||
       filters.courseId === "all" ||
@@ -146,7 +150,7 @@ export function AcademicFilterBar({ title = "Filters" }: Props) {
       cancelled = true;
     };
   }, [
-    isTimetablesPage,
+    usesBatchProgressYear,
     filters.collegeId,
     filters.courseId,
     filters.branchId,
@@ -226,9 +230,21 @@ export function AcademicFilterBar({ title = "Filters" }: Props) {
   );
 
   // On Students, batch already scopes the cohort — Year / Semester are redundant.
+  // On Timetables / Mentoring, batch triggers auto year+semester from batch progress (read-only).
+  const autoYearSemesterFromBatch =
+    usesBatchProgressYear &&
+    filters.batch !== "all" &&
+    filters.collegeId !== "all" &&
+    filters.courseId !== "all" &&
+    filters.branchId !== "all";
+
   const showYearSemesterFilters = !(
-    showSearch && filters.batch !== "all"
+    (showSearch && filters.batch !== "all") ||
+    autoYearSemesterFromBatch
   );
+
+  const readOnlyFieldClassName =
+    "flex h-11 sm:h-9 w-full sm:w-auto sm:min-w-[140px] items-center rounded-md border border-border bg-slate-50 px-2 text-sm text-slate-700";
 
   if (hidden) return null;
 
@@ -557,6 +573,19 @@ export function AcademicFilterBar({ title = "Filters" }: Props) {
         </div>
       ) : (
       <FilterBar className="mb-0 items-end">
+        {isMentoringPage ? (
+          <FilterField label="Search student">
+            <input
+              type="search"
+              value={searchDraft}
+              onChange={(e) => setSearchDraft(e.target.value)}
+              placeholder="Name, roll no., admission no."
+              className={searchClassName}
+              aria-label="Search students"
+            />
+          </FilterField>
+        ) : null}
+
         <FilterField label="Academic Year">
           <select
             className={selectClassName}
@@ -647,6 +676,9 @@ export function AcademicFilterBar({ title = "Filters" }: Props) {
               const nextBatch = e.target.value === "all" ? "all" : e.target.value;
               setFilters({
                 batch: nextBatch,
+                ...(usesBatchProgressYear
+                  ? { year: "all" as const, semester: "all" as const }
+                  : {}),
               });
             }}
           >
@@ -658,6 +690,21 @@ export function AcademicFilterBar({ title = "Filters" }: Props) {
             ))}
           </select>
         </FilterField>
+
+        {autoYearSemesterFromBatch ? (
+          <>
+            <FilterField label="Year">
+              <div className={readOnlyFieldClassName} aria-live="polite">
+                {filters.year === "all" ? "Resolving…" : `Year ${filters.year}`}
+              </div>
+            </FilterField>
+            <FilterField label="Semester">
+              <div className={readOnlyFieldClassName} aria-live="polite">
+                {filters.semester === "all" ? "Resolving…" : `Semester ${filters.semester}`}
+              </div>
+            </FilterField>
+          </>
+        ) : null}
 
         {showYearSemesterFilters ? (
           <>

@@ -165,6 +165,70 @@ export const PERMISSION_PRESENTATION: Record<
     kind: "write",
     sensitive: true,
   },
+  "request.view": {
+    key: "request.view",
+    label: "View Requests",
+    description: "View own requests and pending approvals.",
+    kind: "read",
+  },
+  "request.create": {
+    key: "request.create",
+    label: "Create Requests",
+    description: "Create and submit academic requests.",
+    kind: "write",
+  },
+  "request.approve": {
+    key: "request.approve",
+    label: "Approve Requests",
+    description: "Approve, reject, return, or escalate requests.",
+    kind: "write",
+    sensitive: true,
+  },
+  "request.workflow.manage": {
+    key: "request.workflow.manage",
+    label: "Manage Request Workflows",
+    description: "Configure request types and approval workflows.",
+    kind: "write",
+    sensitive: true,
+  },
+  "mentoring.view": {
+    key: "mentoring.view",
+    label: "View Mentoring & Risks",
+    description: "View mentoring dashboard, mentees, and complaints within academic scope.",
+    kind: "read",
+  },
+  "mentoring.manage": {
+    key: "mentoring.manage",
+    label: "Manage Mentoring Scope",
+    description: "View all students in scope for mentoring (not limited to own mentees).",
+    kind: "read",
+  },
+  "mentoring.assign": {
+    key: "mentoring.assign",
+    label: "Assign Mentors",
+    description: "Assign, change, or remove mentor assignments.",
+    kind: "write",
+  },
+  "mentoring.intervene": {
+    key: "mentoring.intervene",
+    label: "Record Interventions",
+    description: "Add intervention records to complaints.",
+    kind: "write",
+  },
+  "mentoring.case_manage": {
+    key: "mentoring.case_manage",
+    label: "Manage Complaints",
+    description: "Create, monitor, and resolve student complaints.",
+    kind: "write",
+    sensitive: true,
+  },
+  "mentoring.escalate": {
+    key: "mentoring.escalate",
+    label: "Escalate Complaints",
+    description: "Escalate complaints for higher-level review.",
+    kind: "write",
+    sensitive: true,
+  },
 };
 
 /**
@@ -249,8 +313,15 @@ export const PERMISSION_MATRIX_MODULES: MatrixModuleDef[] = [
     group: "Student Support",
     label: "Mentoring & Risks",
     href: "/mentoring-risks",
-    permissions: [asDef("students.view")],
-    accessNote: "Currently unlocked by View Students (no separate mentoring permission yet).",
+    permissions: [
+      asDef("mentoring.view"),
+      asDef("mentoring.manage"),
+      asDef("mentoring.assign"),
+      asDef("mentoring.intervene"),
+      asDef("mentoring.case_manage"),
+      asDef("mentoring.escalate"),
+    ],
+    accessNote: "mentoring.view unlocks the page. students.view remains supported for legacy access during RBAC rollout.",
   },
   {
     group: "Operations",
@@ -265,6 +336,12 @@ export const PERMISSION_MATRIX_MODULES: MatrixModuleDef[] = [
     href: "/reports",
     permissions: [asDef("dashboard.view")],
     accessNote: "Uses Command Center / Overview access.",
+  },
+  {
+    group: "Operations",
+    label: "Requests",
+    href: "/requests",
+    permissions: [asDef("request.view"), asDef("request.create"), asDef("request.approve")],
   },
   {
     group: "Operations",

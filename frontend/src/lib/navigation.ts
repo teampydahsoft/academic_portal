@@ -9,6 +9,7 @@ import {
   FileBarChart2,
   Gauge,
   GraduationCap,
+  Inbox,
   LayoutDashboard,
   Settings,
   Users,
@@ -17,6 +18,7 @@ import {
   Layers3,
   ShieldAlert,
   UserCog,
+  Clock3,
 } from "lucide-react";
 
 export type NavItem = {
@@ -104,6 +106,23 @@ export const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
+    title: "Requests",
+    items: [
+      {
+        label: "My Requests",
+        href: "/requests",
+        icon: Inbox,
+        permissions: ["request.view"],
+      },
+      {
+        label: "Pending Requests",
+        href: "/requests/pending",
+        icon: Clock3,
+        permissions: ["request.approve"],
+      },
+    ],
+  },
+  {
     title: "Examinations",
     items: [
       {
@@ -127,7 +146,7 @@ export const NAV_GROUPS: NavGroup[] = [
         label: "Mentoring & Risks",
         href: "/mentoring-risks",
         icon: ShieldAlert,
-        permissions: ["students.view"],
+        permissions: ["mentoring.view", "students.view"],
       },
     ],
   },

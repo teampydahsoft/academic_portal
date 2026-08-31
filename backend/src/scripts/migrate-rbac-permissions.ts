@@ -138,6 +138,66 @@ const PERMISSION_META: Record<
     displayName: "Edit Semester Dates",
     description: "Edit semester date configuration",
   },
+  "request.view": {
+    module: "request",
+    action: "view",
+    displayName: "View Requests",
+    description: "View own requests and pending approvals",
+  },
+  "request.create": {
+    module: "request",
+    action: "create",
+    displayName: "Create Requests",
+    description: "Create and submit academic requests",
+  },
+  "request.approve": {
+    module: "request",
+    action: "approve",
+    displayName: "Approve Requests",
+    description: "Approve, reject, return, or escalate requests",
+  },
+  "request.workflow.manage": {
+    module: "request",
+    action: "manage_workflow",
+    displayName: "Manage Request Workflows",
+    description: "Configure request types and approval workflows",
+  },
+  "mentoring.view": {
+    module: "mentoring",
+    action: "view",
+    displayName: "View Mentoring & Risks",
+    description: "View mentoring dashboard, mentees, and complaints within academic scope",
+  },
+  "mentoring.manage": {
+    module: "mentoring",
+    action: "manage",
+    description: "View all students in scope for mentoring (not limited to own mentees)",
+    displayName: "Manage Mentoring Scope",
+  },
+  "mentoring.assign": {
+    module: "mentoring",
+    action: "assign",
+    displayName: "Assign Mentors",
+    description: "Assign, change, or remove mentor assignments",
+  },
+  "mentoring.intervene": {
+    module: "mentoring",
+    action: "intervene",
+    displayName: "Record Interventions",
+    description: "Add intervention records to complaints",
+  },
+  "mentoring.case_manage": {
+    module: "mentoring",
+    action: "case_manage",
+    displayName: "Manage Complaints",
+    description: "Create, monitor, and resolve student complaints",
+  },
+  "mentoring.escalate": {
+    module: "mentoring",
+    action: "escalate",
+    displayName: "Escalate Complaints",
+    description: "Escalate complaints for higher-level review",
+  },
 };
 
 async function columnExists(table: string, column: string) {
@@ -316,7 +376,8 @@ async function main() {
   for (const roleKey of Object.keys(ROLE_PERMISSIONS) as RoleKey[]) {
     const roleId = roleIdByKey.get(roleKey);
     if (!roleId) {
-      throw new Error(`Missing role ${roleKey} in ap_roles — aborting`);
+      console.warn(`Skipping ${roleKey}: role not present in ap_roles`);
+      continue;
     }
     await exec(`DELETE FROM ap_role_permissions WHERE role_id = ?`, [roleId]);
     for (const permissionKey of ROLE_PERMISSIONS[roleKey]) {
@@ -337,7 +398,8 @@ async function main() {
   console.log("\n=== Backward compatibility comparison ===");
   let mismatches = 0;
   for (const roleKey of Object.keys(ROLE_PERMISSIONS) as RoleKey[]) {
-    const roleId = roleIdByKey.get(roleKey)!;
+    const roleId = roleIdByKey.get(roleKey);
+    if (!roleId) continue;
     const dbPerms = await queryAcademic<(RowDataPacket & { permission_key: string })[]>(
       `
       SELECT p.permission_key

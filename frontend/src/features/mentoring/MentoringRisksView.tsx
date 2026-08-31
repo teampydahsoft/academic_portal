@@ -8,136 +8,83 @@ import { DataTable } from "@/components/ui/DataTable";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { FilterBar, FilterField } from "@/components/ui/FilterBar";
 import { useAcademicContext } from "@/components/layout/AcademicProvider";
+import { useAuth } from "@/components/auth/AuthProvider";
 import { apiFetch } from "@/lib/api";
-import type { StudentListRow } from "@/features/students/student-types";
-import type { CommandCenterSummary } from "@/features/dashboard/DashboardView";
+import { MentoringStudentCard } from "./MentoringStudentCard";
+import type { MentoringDashboardResponse, MentoringListFilters } from "./types";
+import { buildMentoringQuery, formatComplaintStatus } from "./utils";
 
-type RiskFilter = "all" | "High" | "Medium";
+const selectClassName =
+  "h-11 sm:h-9 w-full rounded-md border border-border bg-white px-2 text-sm text-foreground outline-none focus:border-brand-600 focus:ring-1 focus:ring-brand-600";
 
-const PAGE_SIZE = 100;
-const MAX_PAGES = 10;
-
-function buildStudentsQuery(
-  filters: ReturnType<typeof useAcademicContext>["filters"],
-  offset: number,
-) {
-  const params = new URLSearchParams();
-  params.set("limit", String(PAGE_SIZE));
-  params.set("offset", String(offset));
-  if (filters.q.trim()) params.set("q", filters.q.trim());
-  if (filters.collegeId !== "all") params.set("collegeId", String(filters.collegeId));
-  if (filters.courseId !== "all") params.set("courseId", String(filters.courseId));
-  if (filters.branchId !== "all") params.set("branchId", String(filters.branchId));
-  if (filters.batch !== "all") params.set("batch", String(filters.batch));
-  if (filters.year !== "all") params.set("year", String(filters.year));
-  if (filters.semester !== "all") params.set("semester", String(filters.semester));
-  if (filters.section !== "all") params.set("section", String(filters.section));
-  if (filters.studentStatus !== "all") {
-    params.set("status", String(filters.studentStatus));
-  }
-  return params.toString();
-}
-
-function isAtRisk(row: StudentListRow) {
-  return row.risk === "High" || row.risk === "Medium";
-}
+const DEFAULT_LOCAL_FILTERS: MentoringListFilters = {
+  risk: "all",
+  caseStatus: "all",
+  mentorStaffLinkId: "all",
+  onlyAtRisk: true,
+};
 
 export function MentoringRisksView() {
   const { filters } = useAcademicContext();
-  const [riskFilter, setRiskFilter] = useState<RiskFilter>("all");
-  const [rows, setRows] = useState<StudentListRow[]>([]);
-  const [scannedTotal, setScannedTotal] = useState(0);
-  const [belowThreshold, setBelowThreshold] = useState<number | null>(null);
+  const { hasPermission } = useAuth();
+  const canView = hasPermission("mentoring.view", "students.view");
+
+  const [localFilters, setLocalFilters] = useState<MentoringListFilters>(DEFAULT_LOCAL_FILTERS);
+  const [payload, setPayload] = useState<MentoringDashboardResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [truncated, setTruncated] = useState(false);
 
-  const filterKey = useMemo(
-    () => buildStudentsQuery(filters, 0),
-    [filters],
+  const queryKey = useMemo(
+    () => buildMentoringQuery({ ...filters, q: filters.q }, localFilters),
+    [filters, localFilters],
   );
 
-  const summaryQuery = useMemo(() => {
-    const params = new URLSearchParams();
-    if (filters.collegeId !== "all") params.set("collegeId", String(filters.collegeId));
-    if (filters.courseId !== "all") params.set("courseId", String(filters.courseId));
-    if (filters.branchId !== "all") params.set("branchId", String(filters.branchId));
-    if (filters.section !== "all") params.set("section", filters.section);
-    const qs = params.toString();
-    return qs ? `?${qs}` : "";
-  }, [filters.collegeId, filters.courseId, filters.branchId, filters.section]);
-
   const load = useCallback(async () => {
+    if (!canView) return;
     setLoading(true);
     setError(null);
-    setRows([]);
-    setTruncated(false);
     try {
-      const summaryRes = await apiFetch(`/command-center/summary${summaryQuery}`, {
-        cache: "no-store",
-      });
-      if (summaryRes.ok) {
-        const summary = (await summaryRes.json()) as CommandCenterSummary;
-        setBelowThreshold(Number(summary.openRiskCases ?? summary.studentsBelowThreshold ?? 0));
-      } else {
-        setBelowThreshold(null);
+      const response = await apiFetch(`/mentoring/dashboard?${queryKey}`, { cache: "no-store" });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(
+          typeof body === "object" && body && "message" in body
+            ? String((body as { message: string }).message)
+            : `Failed to load mentoring dashboard (${response.status})`,
+        );
       }
-
-      const atRisk: StudentListRow[] = [];
-      let offset = 0;
-      let total = 0;
-      let pages = 0;
-
-      while (pages < MAX_PAGES) {
-        const response = await apiFetch(`/students?${buildStudentsQuery(filters, offset)}`, {
-          cache: "no-store",
-        });
-        const body = await response.json().catch(() => ({}));
-        if (!response.ok) {
-          throw new Error(
-            typeof body === "object" && body && "message" in body
-              ? String((body as { message: string }).message)
-              : `Failed to load students (${response.status})`,
-          );
-        }
-        const payload = body as { data?: StudentListRow[]; total?: number };
-        const pageRows = payload.data ?? [];
-        total = Number(payload.total ?? pageRows.length);
-        atRisk.push(...pageRows.filter(isAtRisk));
-        offset += pageRows.length;
-        pages += 1;
-        if (pageRows.length === 0 || offset >= total) break;
-      }
-
-      setRows(atRisk);
-      setScannedTotal(total);
-      setTruncated(offset < total);
+      setPayload(body as MentoringDashboardResponse);
     } catch (err) {
-      setRows([]);
-      setError(err instanceof Error ? err.message : "Failed to load risk students");
+      setPayload(null);
+      setError(err instanceof Error ? err.message : "Failed to load mentoring dashboard");
     } finally {
       setLoading(false);
     }
-  }, [filters, summaryQuery]);
+  }, [canView, queryKey]);
 
   useEffect(() => {
     void load();
-  }, [load, filterKey]);
+  }, [load]);
 
-  const visible = useMemo(() => {
-    if (riskFilter === "all") return rows;
-    return rows.filter((row) => row.risk === riskFilter);
-  }, [rows, riskFilter]);
+  if (!canView) {
+    return (
+      <EmptyState
+        title="Mentoring & Risks unavailable"
+        description="You do not have permission to view mentoring and risk management."
+      />
+    );
+  }
 
-  const highCount = rows.filter((r) => r.risk === "High").length;
-  const mediumCount = rows.filter((r) => r.risk === "Medium").length;
+  const summary = payload?.summary;
+  const rows = payload?.data ?? [];
 
   return (
     <div>
       <PageHeader
         title="Mentoring & Risks"
-        description="Attendance-risk students from the live student register. Formal mentoring case assignments are not configured yet."
+        description="Attendance-risk students, mentor assignments, and complaints within your academic scope."
       />
 
       {error ? (
@@ -146,137 +93,153 @@ export function MentoringRisksView() {
         </div>
       ) : null}
 
-      <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard
-          label="Below 75% (scope)"
-          value={loading ? "…" : (belowThreshold ?? "—").toLocaleString()}
-          hint="Command Center · last 90 days"
-          tone="warning"
-        />
-        <StatCard
-          label="High risk listed"
-          value={loading ? "…" : highCount}
-          hint="Attendance under 65%"
-          tone="critical"
-        />
-        <StatCard
-          label="Medium risk listed"
-          value={loading ? "…" : mediumCount}
-          hint="Attendance 65–74%"
-          tone="info"
-        />
-        <StatCard
-          label="Register scanned"
-          value={loading ? "…" : `${Math.min(scannedTotal, PAGE_SIZE * MAX_PAGES).toLocaleString()} / ${scannedTotal.toLocaleString()}`}
-          hint={truncated ? "Partial scan — refine filters" : "Within current filters"}
-        />
+      <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+        <StatCard label="Total Mentees" value={loading ? "…" : (summary?.totalMentees ?? 0)} tone="info" />
+        <StatCard label="High Risk" value={loading ? "…" : (summary?.highRisk ?? 0)} tone="critical" />
+        <StatCard label="Medium Risk" value={loading ? "…" : (summary?.mediumRisk ?? 0)} tone="warning" />
+        <StatCard label="Open Complaints" value={loading ? "…" : (summary?.openCases ?? 0)} />
+        <StatCard label="Follow-ups Due" value={loading ? "…" : (summary?.followUpsDue ?? 0)} tone="warning" />
+        <StatCard label="Escalated" value={loading ? "…" : (summary?.escalated ?? 0)} tone="critical" />
       </div>
 
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        {([
-          ["all", "All at-risk"],
-          ["High", "High"],
-          ["Medium", "Medium"],
-        ] as const).map(([value, label]) => (
-          <button
-            key={value}
-            type="button"
-            onClick={() => setRiskFilter(value)}
-            className={`rounded-md px-3 py-1.5 text-sm transition-colors ${
-              riskFilter === value
-                ? "bg-brand-600 text-white"
-                : "border border-border bg-card text-slate-700 hover:bg-slate-50"
-            }`}
+      <FilterBar className="mb-4">
+        <FilterField label="Risk">
+          <select
+            className={selectClassName}
+            value={localFilters.risk}
+            onChange={(event) =>
+              setLocalFilters((prev) => ({ ...prev, risk: event.target.value as MentoringListFilters["risk"] }))
+            }
           >
-            {label}
-          </button>
-        ))}
-        <Button size="sm" variant="secondary" onClick={() => void load()} disabled={loading}>
-          {loading ? "Refreshing…" : "Refresh"}
-        </Button>
-      </div>
+            <option value="all">All levels</option>
+            <option value="High">High</option>
+            <option value="Medium">Medium</option>
+            <option value="Low">Low</option>
+          </select>
+        </FilterField>
+        <FilterField label="Complaint status">
+          <select
+            className={selectClassName}
+            value={localFilters.caseStatus}
+            onChange={(event) =>
+              setLocalFilters((prev) => ({
+                ...prev,
+                caseStatus: event.target.value as MentoringListFilters["caseStatus"],
+              }))
+            }
+          >
+            <option value="all">All</option>
+            <option value="none">No active complaint</option>
+            <option value="open">Open</option>
+            <option value="monitoring">Monitoring</option>
+            <option value="escalated">Escalated</option>
+            <option value="resolved">Resolved</option>
+          </select>
+        </FilterField>
+        <FilterField label="View">
+          <select
+            className={selectClassName}
+            value={localFilters.onlyAtRisk ? "at-risk" : "all"}
+            onChange={(event) =>
+              setLocalFilters((prev) => ({ ...prev, onlyAtRisk: event.target.value === "at-risk" }))
+            }
+          >
+            <option value="at-risk">At-risk only (default)</option>
+            <option value="all">All students in scope</option>
+          </select>
+        </FilterField>
+        <div className="flex items-end">
+          <Button size="sm" variant="secondary" onClick={() => void load()} disabled={loading}>
+            {loading ? "Refreshing…" : "Refresh"}
+          </Button>
+        </div>
+      </FilterBar>
+
+      {payload?.truncated ? (
+        <p className="mb-2 text-xs text-amber-700">
+          Results may be truncated for large cohorts. Narrow college, branch, year, or section filters.
+        </p>
+      ) : null}
 
       {loading ? (
         <div className="rounded-lg border border-border bg-card px-4 py-10 text-center text-sm text-slate-500">
-          Loading attendance-risk students…
+          Loading mentoring dashboard…
         </div>
-      ) : visible.length === 0 ? (
+      ) : rows.length === 0 ? (
         <EmptyState
           title="No mentoring/risk records available"
-          description="No High or Medium attendance-risk students were found in the current academic scope. Formal mentor assignments and intervention cases are not available yet."
+          description="No students match the current academic scope and filters. Adjust filters or assign mentors to build your mentee list."
         />
       ) : (
         <>
-          {truncated ? (
-            <p className="mb-2 text-xs text-amber-700">
-              Showing at-risk students from the first {PAGE_SIZE * MAX_PAGES} register rows.
-              Narrow college/branch/year filters to scan a smaller cohort.
-            </p>
-          ) : null}
-          <DataTable
-            rows={visible}
-            rowKey={(row) => row.id}
-            emptyMessage="No mentoring/risk records available"
-            columns={[
-              { key: "name", header: "Student", render: (row) => row.name },
-              {
-                key: "rollNo",
-                header: "Roll / Adm.",
-                render: (row) => row.rollNo || row.admissionNo || "—",
-              },
-              {
-                key: "section",
-                header: "Section",
-                render: (row) =>
-                  [row.branch, row.section].filter(Boolean).join(" · ") || "—",
-              },
-              {
-                key: "riskType",
-                header: "Category",
-                render: () => "Attendance risk",
-              },
-              {
-                key: "attendance",
-                header: "Attendance",
-                render: (row) => `${Number(row.attendance ?? 0).toFixed(1)}%`,
-              },
-              {
-                key: "level",
-                header: "Risk level",
-                render: (row) => <StatusBadge status={row.risk} />,
-              },
-              {
-                key: "status",
-                header: "Status",
-                render: () => <StatusBadge status="Open" />,
-              },
-              {
-                key: "mentor",
-                header: "Assigned mentor",
-                render: () => (
-                  <span className="text-slate-400">Not assigned</span>
-                ),
-              },
-              {
-                key: "actions",
-                header: "Actions",
-                render: (row) => (
-                  <div className="flex flex-wrap gap-2">
-                    <Link href={`/mentoring-risks/${row.id}`}>
-                      <Button size="sm" variant="secondary">
-                        Open
-                      </Button>
-                    </Link>
-                    <Link href={`/students/${row.id}`}>
-                      <Button size="sm" variant="ghost">
-                        Profile
-                      </Button>
-                    </Link>
-                  </div>
-                ),
-              },
-            ]}
-          />
+          <div className="hidden md:block">
+            <DataTable
+              rows={rows}
+              rowKey={(row) => row.id}
+              emptyMessage="No mentoring/risk records available"
+              columns={[
+                { key: "name", header: "Student", render: (row) => row.name },
+                {
+                  key: "rollNo",
+                  header: "Roll / Adm.",
+                  render: (row) => row.rollNo || row.admissionNo || "—",
+                },
+                {
+                  key: "section",
+                  header: "Section",
+                  render: (row) => [row.branch, row.section].filter(Boolean).join(" · ") || "—",
+                },
+                {
+                  key: "attendance",
+                  header: "Attendance",
+                  render: (row) => `${row.attendance.toFixed(1)}%`,
+                },
+                {
+                  key: "risk",
+                  header: "Risk",
+                  render: (row) => <StatusBadge status={row.risk} />,
+                },
+                {
+                  key: "mentor",
+                  header: "Mentor",
+                  render: (row) => row.mentor?.name ?? <span className="text-slate-400">Not assigned</span>,
+                },
+                {
+                  key: "complaint",
+                  header: "Complaint",
+                  render: (row) =>
+                    row.activeCase ? (
+                      <StatusBadge status={formatComplaintStatus(row.activeCase.status)} />
+                    ) : (
+                      <span className="text-slate-400">—</span>
+                    ),
+                },
+                {
+                  key: "actions",
+                  header: "Actions",
+                  render: (row) => (
+                    <div className="flex flex-wrap gap-2">
+                      <Link href={`/mentoring-risks/${row.id}`}>
+                        <Button size="sm" variant="secondary">
+                          Open
+                        </Button>
+                      </Link>
+                      <Link href={`/students/${row.id}`}>
+                        <Button size="sm" variant="ghost">
+                          Profile
+                        </Button>
+                      </Link>
+                    </div>
+                  ),
+                },
+              ]}
+            />
+          </div>
+          <div className="grid gap-3 md:hidden">
+            {rows.map((row) => (
+              <MentoringStudentCard key={row.id} row={row} />
+            ))}
+          </div>
         </>
       )}
     </div>

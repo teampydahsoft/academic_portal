@@ -9,6 +9,8 @@ import {
   listTimingSlots,
   type DayCode,
 } from "./timing.service.js";
+import { ensureSessionsForDate } from "./class-sessions.service.js";
+import { getMyTimetableDateOverrides } from "./faculty-substitution.service.js";
 
 const WEEK_DAYS: DayCode[] = ["MON", "TUE", "WED", "THUR", "FRI", "SAT"];
 
@@ -342,5 +344,154 @@ export async function getMyTimetable(
     assignments,
     source: detail.source,
     published: detail.assignments.length > 0,
+  };
+}
+
+export type MyTimetableDatePeriod =
+  | ({
+      kind: "regular";
+    } & Omit<Extract<TimetablePeriod, { kind: "class" }>, never>)
+  | {
+      kind: "substituted";
+      classSessionId: number;
+      startTime: string;
+      endTime: string;
+      slotLabel: string | null;
+      subjectName: string | null;
+      sectionName: string;
+      replacementFacultyName: string | null;
+      requestId: number;
+    }
+  | {
+      kind: "substitution";
+      classSessionId: number;
+      startTime: string;
+      endTime: string;
+      slotLabel: string | null;
+      subjectName: string | null;
+      sectionName: string;
+      originalFacultyName: string | null;
+      requestId: number;
+    };
+
+export async function getMyTimetableForDate(
+  hrmsEmployeeId: string | null | undefined,
+  sessionDate: string,
+  filters: WorkloadFilters = {},
+) {
+  const base = await getMyTimetable(hrmsEmployeeId, filters);
+  if (!base.linked || !base.faculty) {
+    return { ...base, sessionDate, periods: [] as MyTimetableDatePeriod[] };
+  }
+
+  await ensureSessionsForDate(sessionDate, {
+    collegeId: filters.collegeId,
+    branchId: filters.branchId,
+    batch: filters.batch,
+    year: filters.year,
+    semester: filters.semester,
+    section: filters.section,
+  });
+
+  const overrides = await getMyTimetableDateOverrides(base.faculty.staffLinkId, sessionDate);
+
+  const sessionRows = await queryAcademic<
+    (RowDataPacket & {
+      id: number;
+      start_time: string;
+      end_time: string;
+      slot_label: string | null;
+      subject_name: string | null;
+      section_name: string | null;
+      room_label: string | null;
+      timetable_entry_id: number;
+    })[]
+  >(
+    `
+    SELECT
+      cs.id,
+      cs.start_time,
+      cs.end_time,
+      ts.label AS slot_label,
+      cs.subject_name,
+      cs.section_name,
+      cs.room_label,
+      cs.timetable_entry_id
+    FROM ap_class_sessions cs
+    LEFT JOIN ap_timing_template_slots ts ON ts.id = COALESCE(cs.timing_slot_id, cs.period_slot_id)
+    WHERE cs.session_date = ?
+      AND cs.faculty_staff_link_id = ?
+      AND cs.status NOT IN ('cancelled', 'holiday')
+    ORDER BY cs.start_time ASC, cs.id ASC
+    `,
+    [sessionDate, base.faculty.staffLinkId],
+  );
+
+  const periods: MyTimetableDatePeriod[] = [];
+
+  for (const row of sessionRows) {
+    const sessionId = Number(row.id);
+    const incoming = overrides.incoming.find((item) => item.classSessionId === sessionId);
+    if (incoming) {
+      periods.push({
+        kind: "substitution",
+        classSessionId: sessionId,
+        startTime: incoming.startTime ?? String(row.start_time).slice(0, 5),
+        endTime: incoming.endTime ?? String(row.end_time).slice(0, 5),
+        slotLabel: incoming.slotLabel ?? row.slot_label,
+        subjectName: incoming.subjectName ?? row.subject_name,
+        sectionName: incoming.sectionName ?? row.section_name ?? "—",
+        originalFacultyName: incoming.originalFacultyName,
+        requestId: incoming.requestId,
+      });
+      continue;
+    }
+
+    periods.push({
+      kind: "regular",
+      entryId: Number(row.timetable_entry_id),
+      startTime: String(row.start_time).slice(0, 5),
+      endTime: String(row.end_time).slice(0, 5),
+      slotLabel: row.slot_label,
+      minutes: 0,
+      entryType: "theory",
+      subjectCode: null,
+      subjectName: row.subject_name,
+      section: row.section_name,
+      batch: filters.batch ?? "",
+      year: filters.year ?? null,
+      semester: filters.semester ?? null,
+      academicYear: filters.academicYear ?? "",
+      collegeId: filters.collegeId ?? 0,
+      courseId: filters.courseId ?? 0,
+      branchId: filters.branchId ?? 0,
+      collegeName: null,
+      courseName: null,
+      branchName: null,
+      roomLabel: row.room_label,
+    });
+  }
+
+  for (const outgoing of overrides.outgoing) {
+    periods.push({
+      kind: "substituted",
+      classSessionId: outgoing.classSessionId,
+      startTime: outgoing.startTime ?? "",
+      endTime: outgoing.endTime ?? "",
+      slotLabel: outgoing.slotLabel,
+      subjectName: outgoing.subjectName,
+      sectionName: outgoing.sectionName,
+      replacementFacultyName: outgoing.replacementFacultyName,
+      requestId: outgoing.requestId,
+    });
+  }
+
+  periods.sort((a, b) => a.startTime.localeCompare(b.startTime));
+
+  return {
+    ...base,
+    sessionDate,
+    periods,
+    substitutionCount: overrides.outgoing.length + overrides.incoming.length,
   };
 }

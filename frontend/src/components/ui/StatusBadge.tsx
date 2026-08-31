@@ -32,6 +32,12 @@ const styles: Record<string, string> = {
   Pass: "bg-brand-50 text-success",
   Fail: "bg-red-50 text-critical",
   Supply: "bg-amber-50 text-warning",
+  Submitted: "bg-slate-50 text-info",
+  PendingApproval: "bg-amber-50 text-warning",
+  Approved: "bg-brand-50 text-success",
+  Rejected: "bg-red-50 text-critical",
+  Returned: "bg-amber-50 text-warning",
+  Cancelled: "bg-slate-100 text-slate-700",
 };
 
 function titleCase(value: string) {

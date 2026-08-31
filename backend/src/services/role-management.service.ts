@@ -7,6 +7,7 @@ import {
 } from "../authz/authorization.service.js";
 import { revokeAllSessionsForUser } from "./auth.service.js";
 import { writeAuditLog } from "./audit.service.js";
+import { countActiveWorkflowReferencesForRole } from "./request-workflow-admin.service.js";
 
 function text(value: unknown): string | null {
   if (value == null) return null;
@@ -490,6 +491,14 @@ export async function deleteRole(input: {
     fail(
       400,
       "This is a seeded system role. Pass confirmImpact=true to permanently delete it.",
+    );
+  }
+
+  const workflowRefs = await countActiveWorkflowReferencesForRole(existing.roleKey);
+  if (workflowRefs > 0) {
+    fail(
+      409,
+      `Cannot delete “${existing.label}”: this role is required by ${workflowRefs} active workflow step${workflowRefs === 1 ? "" : "s"}. Update those workflows first.`,
     );
   }
 

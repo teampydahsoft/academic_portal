@@ -24,6 +24,16 @@ export const PERMISSIONS = [
   "catalog.view",
   "semester_dates.view",
   "semester_dates.edit",
+  "request.view",
+  "request.create",
+  "request.approve",
+  "request.workflow.manage",
+  "mentoring.view",
+  "mentoring.manage",
+  "mentoring.assign",
+  "mentoring.intervene",
+  "mentoring.case_manage",
+  "mentoring.escalate",
 ] as const;
 
 export type Permission = (typeof PERMISSIONS)[number] | (string & {});
@@ -51,6 +61,17 @@ export const GLOBAL_SCOPE_ROLES: RoleKey[] = [
 
 const ALL: Permission[] = [...PERMISSIONS];
 
+const MENTORING_VIEW: Permission[] = ["mentoring.view"];
+const MENTORING_FULL: Permission[] = [
+  "mentoring.view",
+  "mentoring.manage",
+  "mentoring.assign",
+  "mentoring.intervene",
+  "mentoring.case_manage",
+  "mentoring.escalate",
+];
+const MENTORING_MENTOR: Permission[] = ["mentoring.view", "mentoring.intervene"];
+
 const VIEW_ACADEMIC: Permission[] = [
   "dashboard.view",
   "students.view",
@@ -70,7 +91,7 @@ const VIEW_ACADEMIC: Permission[] = [
 export const ROLE_PERMISSIONS: Record<RoleKey, Permission[]> = {
   system_admin: ALL,
 
-  management: VIEW_ACADEMIC,
+  management: [...VIEW_ACADEMIC, "request.view", "request.create", "request.approve", "request.workflow.manage", ...MENTORING_FULL],
 
   academic_admin: [
     "dashboard.view",
@@ -91,6 +112,11 @@ export const ROLE_PERMISSIONS: Record<RoleKey, Permission[]> = {
     "semester_dates.edit",
     "settings.view",
     "settings.edit",
+    "request.view",
+    "request.create",
+    "request.approve",
+    "request.workflow.manage",
+    ...MENTORING_FULL,
   ],
 
   principal: [
@@ -106,6 +132,10 @@ export const ROLE_PERMISSIONS: Record<RoleKey, Permission[]> = {
     "catalog.view",
     "semester_dates.view",
     "settings.view",
+    "request.view",
+    "request.create",
+    "request.approve",
+    ...MENTORING_FULL,
   ],
 
   hod: [
@@ -120,6 +150,10 @@ export const ROLE_PERMISSIONS: Record<RoleKey, Permission[]> = {
     "workload.view",
     "catalog.view",
     "semester_dates.view",
+    "request.view",
+    "request.create",
+    "request.approve",
+    ...MENTORING_FULL,
   ],
 
   faculty: [
@@ -131,6 +165,9 @@ export const ROLE_PERMISSIONS: Record<RoleKey, Permission[]> = {
     "attendance.post",
     "workload.view",
     "catalog.view",
+    "request.view",
+    "request.create",
+    ...MENTORING_MENTOR,
   ],
 
   exam_cell: [
@@ -154,6 +191,8 @@ export const ROLE_PERMISSIONS: Record<RoleKey, Permission[]> = {
     "catalog.view",
     "semester_dates.view",
     "settings.view",
+    "request.view",
+    ...MENTORING_VIEW,
   ],
 };
 

@@ -131,6 +131,8 @@ function riskFromAttendance(attendance: number): "High" | "Medium" | "Low" {
   return "Low";
 }
 
+export { riskFromAttendance };
+
 /** Align batch string compares across tables with different collations. */
 const BATCH_EQ_PARAM = `TRIM(COALESCE(sem.batch, '')) COLLATE utf8mb4_unicode_ci = TRIM(COALESCE(?, '')) COLLATE utf8mb4_unicode_ci`;
 const BATCH_EMPTY = `TRIM(COALESCE(sem.batch, '')) COLLATE utf8mb4_unicode_ci = '' COLLATE utf8mb4_unicode_ci`;

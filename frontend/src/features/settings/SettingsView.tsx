@@ -1,6 +1,9 @@
+"use client";
+
 import Link from "next/link";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
+import { useAuth } from "@/components/auth/AuthProvider";
 
 const sections = [
   {
@@ -18,6 +21,12 @@ const sections = [
     description:
       "Enable which HRMS employee groups appear on Faculty & Departments.",
     href: "/settings/faculty-display",
+  },
+  {
+    title: "Request Workflows",
+    description: "Configure request types and dynamic approval hierarchies.",
+    href: "/settings/request-workflows",
+    permission: "request.workflow.manage",
   },
   {
     title: "Roles",
@@ -46,6 +55,11 @@ const sections = [
 ];
 
 export function SettingsView() {
+  const { hasPermission } = useAuth();
+  const visibleSections = sections.filter(
+    (section) => !section.permission || hasPermission(section.permission),
+  );
+
   return (
     <div>
       <PageHeader
@@ -53,7 +67,7 @@ export function SettingsView() {
         description="Configuration for roles, thresholds and integration health. Database credentials are not exposed here."
       />
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-        {sections.map((section) =>
+        {visibleSections.map((section) =>
           section.href ? (
             <Link key={section.title} href={section.href} className="block">
               <Card className="h-full transition-colors hover:border-navy-700/40">
