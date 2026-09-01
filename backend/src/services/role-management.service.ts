@@ -9,6 +9,16 @@ import { revokeAllSessionsForUser } from "./auth.service.js";
 import { writeAuditLog } from "./audit.service.js";
 import { countActiveWorkflowReferencesForRole } from "./request-workflow-admin.service.js";
 
+const PORTAL_ADMIN_PERMISSION_KEYS = [
+  "user_management.manage_users",
+  "roles.manage",
+] as const;
+
+function portalAdminPermissionSql(alias = "p") {
+  const placeholders = PORTAL_ADMIN_PERMISSION_KEYS.map(() => "?").join(", ");
+  return `${alias}.permission_key IN (${placeholders})`;
+}
+
 function text(value: unknown): string | null {
   if (value == null) return null;
   const t = String(value).trim();
@@ -214,26 +224,26 @@ async function countActiveGlobalSystemAdmins(excludeUserId?: number) {
       AND r.role_key = 'system_admin'
       AND ur.college_id IS NULL
       AND ur.branch_id IS NULL
-      AND p.permission_key = 'user_management.manage_users'
+      AND ${portalAdminPermissionSql("p")}
       AND p.is_active = 1
       AND (? IS NULL OR u.id <> ?)
     `,
-    [excludeUserId ?? null, excludeUserId ?? null],
+    [...PORTAL_ADMIN_PERMISSION_KEYS, excludeUserId ?? null, excludeUserId ?? null],
   );
   return Number(rows[0]?.c ?? 0);
 }
 
-async function roleHasManageUsers(roleId: number) {
+async function roleHasPortalAdminPermission(roleId: number) {
   const rows = await queryAcademic<(RowDataPacket & { c: number })[]>(
     `
     SELECT COUNT(*) AS c
     FROM ap_role_permissions rp
     INNER JOIN ap_permissions p ON p.id = rp.permission_id
     WHERE rp.role_id = ?
-      AND p.permission_key = 'user_management.manage_users'
+      AND ${portalAdminPermissionSql("p")}
       AND p.is_active = 1
     `,
-    [roleId],
+    [roleId, ...PORTAL_ADMIN_PERMISSION_KEYS],
   );
   return Number(rows[0]?.c ?? 0) > 0;
 }
@@ -411,13 +421,13 @@ export async function setRoleActiveStatus(input: {
         WHERE u.is_active = 1
           AND r.is_active = 1
           AND r.id <> ?
-          AND p.permission_key = 'user_management.manage_users'
+          AND ${portalAdminPermissionSql("p")}
           AND p.is_active = 1
         `,
-        [input.roleId],
+        [input.roleId, ...PORTAL_ADMIN_PERMISSION_KEYS],
       );
       if (Number(otherAdmins[0]?.c ?? 0) === 0) {
-        fail(400, "Cannot deactivate the only role that grants user_management.manage_users");
+        fail(400, "Cannot deactivate the only role that grants portal administration");
       }
     }
   }
@@ -563,8 +573,8 @@ async function setRolePermissionsInternal(
   const existing = await getManagedRole(roleId);
   if (!existing) fail(404, "Role not found");
 
-  const nextHasManage = uniqueKeys.includes("user_management.manage_users");
-  const prevHasManage = await roleHasManageUsers(roleId);
+  const nextHasManage = PORTAL_ADMIN_PERMISSION_KEYS.some((key) => uniqueKeys.includes(key));
+  const prevHasManage = await roleHasPortalAdminPermission(roleId);
 
   if (prevHasManage && !nextHasManage) {
     const otherAdmins = await queryAcademic<(RowDataPacket & { c: number })[]>(
@@ -578,21 +588,21 @@ async function setRolePermissionsInternal(
       WHERE u.is_active = 1
         AND r.is_active = 1
         AND r.id <> ?
-        AND p.permission_key = 'user_management.manage_users'
+        AND ${portalAdminPermissionSql("p")}
         AND p.is_active = 1
       `,
-      [roleId],
+      [roleId, ...PORTAL_ADMIN_PERMISSION_KEYS],
     );
     if (Number(otherAdmins[0]?.c ?? 0) === 0) {
       fail(
         400,
-        "Cannot remove user_management.manage_users from the only role that grants portal administration",
+        "Cannot remove portal administration from the only role that grants it",
       );
     }
     if (!options.confirmImpact) {
       fail(
         400,
-        "Removing manage_users from this role affects administrators. Pass confirmImpact=true to confirm.",
+        "Removing portal administration from this role affects administrators. Pass confirmImpact=true to confirm.",
       );
     }
   }

@@ -59,7 +59,7 @@ export const NAV_GROUPS: NavGroup[] = [
         label: "My Timetable",
         href: "/my-timetable",
         icon: CalendarCheck,
-        permissions: ["timetable.view"],
+        permissions: ["my_timetable.view"],
       },
       {
         label: "Attendance Calendar",
@@ -89,7 +89,7 @@ export const NAV_GROUPS: NavGroup[] = [
         label: "Attendance Analytics",
         href: "/attendance-analytics",
         icon: LineChart,
-        permissions: ["attendance.view"],
+        permissions: ["attendance_analytics.view"],
       },
       {
         label: "Faculty & Departments",
@@ -157,19 +157,19 @@ export const NAV_GROUPS: NavGroup[] = [
         label: "Pending & Exceptions",
         href: "/pending-exceptions",
         icon: AlertTriangle,
-        permissions: ["dashboard.view"],
+        permissions: ["pending_exceptions.view"],
       },
       {
         label: "Reports",
         href: "/reports",
         icon: FileBarChart2,
-        permissions: ["dashboard.view"],
+        permissions: ["reports.view"],
       },
       {
         label: "Alerts",
         href: "/alerts",
         icon: Bell,
-        permissions: ["dashboard.view"],
+        permissions: ["alerts.view"],
       },
     ],
   },
@@ -192,14 +192,27 @@ export const NAV_GROUPS: NavGroup[] = [
   },
 ];
 
+/** Sidebar routes shown to teaching staff without institute-wide admin permissions. */
+export const TEACHING_STAFF_NAV_HREFS = new Set([
+  "/dashboard",
+  "/my-timetable",
+  "/attendance-posting",
+  "/requests",
+  "/mentoring-risks",
+]);
+
 export function filterNavGroups(
   groups: NavGroup[],
   hasAnyPermission: (...permissions: string[]) => boolean,
+  options?: { teachingStaffOnly?: boolean },
 ): NavGroup[] {
   return groups
     .map((group) => ({
       ...group,
       items: group.items.filter((item) => {
+        if (options?.teachingStaffOnly && !TEACHING_STAFF_NAV_HREFS.has(item.href)) {
+          return false;
+        }
         if (!item.permissions?.length) return true;
         return hasAnyPermission(...item.permissions);
       }),

@@ -8,9 +8,11 @@ import {
 import {
   createSubstitutionDetails,
   listReplacementFacultyAvailability,
+  listMySubstitutionClasses,
   listTimingSlotsForSubstitution,
   loadSubstitutionDetailByRequestId,
   resolveClassAssignment,
+  resolveClassAssignmentByEntryId,
 } from "../services/faculty-substitution.service.js";
 
 export const facultySubstitutionRouter = Router();
@@ -41,6 +43,22 @@ facultySubstitutionRouter.post(
   async (req: AuthedRequest, res, next) => {
     try {
       const sessionDate = str(req.body?.sessionDate);
+      if (!sessionDate) {
+        res.status(400).json({ message: "sessionDate is required" });
+        return;
+      }
+
+      const timetableEntryId = num(req.body?.timetableEntryId);
+      if (timetableEntryId) {
+        res.json(
+          await resolveClassAssignmentByEntryId(getAuthz(req), {
+            sessionDate,
+            timetableEntryId,
+          }),
+        );
+        return;
+      }
+
       const collegeId = num(req.body?.collegeId);
       const courseId = num(req.body?.courseId);
       const branchId = num(req.body?.branchId);
@@ -65,6 +83,25 @@ facultySubstitutionRouter.post(
           academicYear: str(req.body?.academicYear),
         }),
       );
+    } catch (error) {
+      handleError(error, res, next);
+    }
+  },
+);
+
+facultySubstitutionRouter.get(
+  "/my-classes",
+  requirePermission("request.create"),
+  async (req: AuthedRequest, res, next) => {
+    try {
+      const sessionDate = str(req.query.sessionDate);
+      if (!sessionDate) {
+        res.status(400).json({ message: "sessionDate is required" });
+        return;
+      }
+      res.json({
+        data: await listMySubstitutionClasses(getAuthz(req), sessionDate),
+      });
     } catch (error) {
       handleError(error, res, next);
     }

@@ -7,6 +7,10 @@ import {
 } from "../db/pools.js";
 import type { AuthzContext } from "../authz/authorization.service.js";
 import {
+  shouldRestrictToOwnTeachingLoad,
+} from "../authz/faculty-self-scope.js";
+import { listFaculty } from "./faculty.service.js";
+import {
   assertEntityInScope,
   hasPermission,
 } from "../authz/authorization.service.js";
@@ -183,7 +187,7 @@ export async function resolveClassAssignment(
     "e.day_of_week = ?",
     "COALESCE(e.timing_slot_id, e.period_slot_id) = ?",
     "e.subject_id IS NOT NULL",
-    "s.slot_type = 'CLASS'",
+    "ts.slot_type = 'CLASS'",
   ];
   const params: unknown[] = [
     input.collegeId,
@@ -254,7 +258,18 @@ export async function resolveClassAssignment(
     fail(400, "Selected class has no assigned faculty in the published timetable");
   }
 
+  await assertOwnClassForSubstitution(authz, row.faculty_staff_link_id);
+
   const dayLabel = DAY_CODE_TO_LABEL[row.day_of_week] ?? row.day_of_week;
+  return mapResolvedClassRow(row, input.sectionName, dayLabel);
+}
+
+function mapResolvedClassRow(
+  row: PlanEntryRow,
+  fallbackSectionName?: string,
+  dayLabel?: string,
+) {
+  const label = dayLabel ?? DAY_CODE_TO_LABEL[row.day_of_week] ?? row.day_of_week;
   return {
     timetableEntryId: Number(row.entry_id),
     planId: Number(row.plan_id),
@@ -264,11 +279,11 @@ export async function resolveClassAssignment(
     batch: row.batch,
     yearOfStudy: row.year_of_study != null ? Number(row.year_of_study) : null,
     semesterNumber: row.semester_number != null ? Number(row.semester_number) : null,
-    sectionName: row.section_name ?? input.sectionName,
+    sectionName: row.section_name?.trim() || fallbackSectionName?.trim() || "—",
     academicYear: row.academic_year_label,
     timingSlotId: Number(row.timing_slot_id),
     dayOfWeek: row.day_of_week,
-    dayLabel,
+    dayLabel: label,
     subjectId: row.subject_id != null ? Number(row.subject_id) : null,
     subjectCode: row.subject_code,
     subjectName: row.subject_name,
@@ -280,6 +295,81 @@ export async function resolveClassAssignment(
     startTime: String(row.start_time).slice(0, 5),
     endTime: String(row.end_time).slice(0, 5),
   };
+}
+
+async function assertOwnClassForSubstitution(authz: AuthzContext, facultyStaffLinkId: number | null) {
+  if (!facultyStaffLinkId) {
+    fail(400, "Selected class has no assigned faculty in the published timetable");
+  }
+  if (shouldRestrictToOwnTeachingLoad(authz)) {
+    const requesterStaffLinkId = await resolveRequesterStaffLinkId(authz.userId);
+    if (!requesterStaffLinkId || Number(facultyStaffLinkId) !== requesterStaffLinkId) {
+      fail(403, "You can only request substitution for your own assigned classes");
+    }
+  }
+}
+
+/** Resolve a class directly from a timetable entry (faculty my-classes flow). */
+export async function resolveClassAssignmentByEntryId(
+  authz: AuthzContext,
+  input: { sessionDate: string; timetableEntryId: number },
+) {
+  if (!hasPermission(authz, "request.create") && !hasPermission(authz, "request.view")) {
+    fail(403, "Forbidden");
+  }
+  if (!isIsoDate(input.sessionDate)) fail(400, "sessionDate must be YYYY-MM-DD");
+
+  const dayOfWeek = dayCodeFromDate(input.sessionDate);
+  const rows = await queryAcademic<PlanEntryRow[]>(
+    `
+    SELECT
+      e.id AS entry_id,
+      p.id AS plan_id,
+      p.college_id,
+      p.course_id,
+      p.branch_id,
+      p.batch,
+      p.year_of_study,
+      p.semester_number,
+      p.section_name,
+      p.academic_year_label,
+      p.timing_template_id,
+      e.day_of_week,
+      COALESCE(e.timing_slot_id, e.period_slot_id) AS timing_slot_id,
+      e.subject_id,
+      e.subject_code,
+      e.subject_name,
+      e.faculty_staff_link_id,
+      e.room_label,
+      ts.label AS slot_label,
+      ts.start_time,
+      ts.end_time,
+      sl.display_name AS faculty_name,
+      sl.hrms_employee_id AS faculty_hrms_id
+    FROM ap_timetable_entries e
+    INNER JOIN ap_timetable_plans p ON p.id = e.plan_id
+    INNER JOIN ap_timing_template_slots ts
+      ON ts.id = COALESCE(e.timing_slot_id, e.period_slot_id)
+    LEFT JOIN ap_staff_link sl ON sl.id = e.faculty_staff_link_id
+    WHERE e.id = ?
+      AND p.status = 'published'
+      AND e.day_of_week = ?
+      AND e.subject_id IS NOT NULL
+      AND ts.slot_type = 'CLASS'
+    LIMIT 1
+    `,
+    [input.timetableEntryId, dayOfWeek],
+  );
+
+  const row = rows[0];
+  if (!row) {
+    fail(404, "No published class assignment found for the selected date and class");
+  }
+
+  await assertScope(authz, Number(row.college_id), Number(row.branch_id));
+  await assertOwnClassForSubstitution(authz, row.faculty_staff_link_id);
+
+  return mapResolvedClassRow(row);
 }
 
 async function facultyBusyOnSlot(
@@ -361,41 +451,43 @@ export async function listReplacementFacultyAvailability(
     branchId: input.branchId,
   });
 
-  const q = input.search?.trim().toLowerCase();
-  const limit = Math.min(Math.max(input.limit ?? 40, 1), 100);
+  const limit = Math.min(Math.max(input.limit ?? 50, 1), 100);
+  const search = input.search?.trim();
 
-  const rows = await queryAcademic<
-    (RowDataPacket & {
-      id: number;
-      display_name: string;
-      hrms_employee_id: string;
-      department_name: string | null;
-    })[]
-  >(
-    `
-    SELECT DISTINCT sl.id, sl.display_name, sl.hrms_employee_id, sl.department_name
-    FROM ap_staff_link sl
-    WHERE (? IS NULL OR LOWER(sl.display_name) LIKE ? OR LOWER(sl.hrms_employee_id) LIKE ?)
-    ORDER BY sl.display_name ASC
-    LIMIT ?
-    `,
-    [q ?? null, q ? `%${q}%` : null, q ? `%${q}%` : null, limit],
+  const entryRows = await queryAcademic<(RowDataPacket & { faculty_staff_link_id: number | null })[]>(
+    `SELECT faculty_staff_link_id FROM ap_timetable_entries WHERE id = ? LIMIT 1`,
+    [input.timetableEntryId],
   );
+  const originalStaffLinkId =
+    entryRows[0]?.faculty_staff_link_id != null
+      ? Number(entryRows[0].faculty_staff_link_id)
+      : null;
+
+  const facultyPage = await listFaculty({
+    search: search || undefined,
+    linkStatus: "linked",
+    pageSize: limit,
+    page: 1,
+  });
 
   const availability = [];
-  for (const row of rows) {
-    const staffLinkId = Number(row.id);
+  for (const faculty of facultyPage.data) {
+    if (!faculty.staffLinkId) continue;
+    if (originalStaffLinkId && faculty.staffLinkId === originalStaffLinkId) continue;
+
     const busy = await facultyBusyOnSlot(
-      staffLinkId,
+      faculty.staffLinkId,
       input.sessionDate,
       input.timingSlotId,
       input.timetableEntryId,
     );
     availability.push({
-      staffLinkId,
-      name: row.display_name,
-      hrmsEmployeeId: row.hrms_employee_id,
-      department: row.department_name,
+      staffLinkId: faculty.staffLinkId,
+      name: faculty.name,
+      hrmsEmployeeId: faculty.hrmsEmployeeId,
+      department: faculty.department !== "—" ? faculty.department : null,
+      division: faculty.division !== "—" ? faculty.division : null,
+      college: faculty.college !== "—" ? faculty.college : null,
       available: !busy,
       busyWith:
         busy != null
@@ -406,6 +498,11 @@ export async function listReplacementFacultyAvailability(
           : null,
     });
   }
+
+  availability.sort((a, b) => {
+    if (a.available !== b.available) return a.available ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
 
   return availability;
 }
@@ -496,6 +593,84 @@ export async function listTimingSlotsForSubstitution(
   }));
 }
 
+/** Published classes assigned to the logged-in faculty on a given date (for substitution requests). */
+export async function listMySubstitutionClasses(authz: AuthzContext, sessionDate: string) {
+  if (!hasPermission(authz, "request.create")) {
+    fail(403, "Forbidden");
+  }
+  if (!isIsoDate(sessionDate)) fail(400, "sessionDate must be YYYY-MM-DD");
+
+  const staffLinkId = await resolveRequesterStaffLinkId(authz.userId);
+  if (!staffLinkId) {
+    fail(400, "Your account is not linked to a faculty profile");
+  }
+
+  const dayOfWeek = dayCodeFromDate(sessionDate);
+  const rows = await queryAcademic<
+    (RowDataPacket & {
+      entry_id: number;
+      timing_slot_id: number;
+      slot_label: string;
+      start_time: string;
+      end_time: string;
+      subject_name: string | null;
+      section_name: string | null;
+      batch: string;
+      college_id: number;
+      course_id: number;
+      branch_id: number;
+      year_of_study: number | null;
+      semester_number: number | null;
+      academic_year_label: string;
+    })[]
+  >(
+    `
+    SELECT
+      e.id AS entry_id,
+      COALESCE(e.timing_slot_id, e.period_slot_id) AS timing_slot_id,
+      ts.label AS slot_label,
+      ts.start_time,
+      ts.end_time,
+      e.subject_name,
+      p.section_name,
+      p.batch,
+      p.college_id,
+      p.course_id,
+      p.branch_id,
+      p.year_of_study,
+      p.semester_number,
+      p.academic_year_label
+    FROM ap_timetable_entries e
+    INNER JOIN ap_timetable_plans p ON p.id = e.plan_id
+    INNER JOIN ap_timing_template_slots ts ON ts.id = COALESCE(e.timing_slot_id, e.period_slot_id)
+    WHERE p.status = 'published'
+      AND e.day_of_week = ?
+      AND e.faculty_staff_link_id = ?
+      AND e.subject_id IS NOT NULL
+      AND ts.slot_type = 'CLASS'
+    ORDER BY ts.start_time ASC, ts.slot_order ASC, p.section_name ASC
+    `,
+    [dayOfWeek, staffLinkId],
+  );
+
+  return rows.map((row) => ({
+    timetableEntryId: Number(row.entry_id),
+    timingSlotId: Number(row.timing_slot_id),
+    slotLabel: row.slot_label,
+    startTime: String(row.start_time).slice(0, 5),
+    endTime: String(row.end_time).slice(0, 5),
+    subjectName: row.subject_name,
+    sectionName: row.section_name?.trim() || "—",
+    batch: row.batch,
+    collegeId: Number(row.college_id),
+    courseId: Number(row.course_id),
+    branchId: Number(row.branch_id),
+    yearOfStudy: row.year_of_study != null ? Number(row.year_of_study) : null,
+    semesterNumber: row.semester_number != null ? Number(row.semester_number) : null,
+    academicYear: row.academic_year_label,
+  }));
+}
+
 export async function createSubstitutionDetails(
   authz: AuthzContext,
   requestId: number,
@@ -518,22 +693,10 @@ export async function createSubstitutionDetails(
 ) {
   if (!hasPermission(authz, "request.create")) fail(403, "Forbidden");
 
-  const assignment = await resolveClassAssignment(authz, {
+  const assignment = await resolveClassAssignmentByEntryId(authz, {
     sessionDate: input.sessionDate,
-    collegeId: input.collegeId,
-    courseId: input.courseId,
-    branchId: input.branchId,
-    batch: input.batch,
-    yearOfStudy: input.yearOfStudy,
-    semesterNumber: input.semesterNumber,
-    sectionName: input.sectionName,
-    timingSlotId: input.timingSlotId,
-    academicYear: input.academicYear,
+    timetableEntryId: input.timetableEntryId,
   });
-
-  if (assignment.timetableEntryId !== input.timetableEntryId) {
-    fail(400, "Timetable assignment mismatch");
-  }
 
   const requesterStaffLinkId = await resolveRequesterStaffLinkId(authz.userId);
   if (
@@ -558,8 +721,8 @@ export async function createSubstitutionDetails(
   const busy = await facultyBusyOnSlot(
     input.replacementFacultyStaffLinkId,
     input.sessionDate,
-    input.timingSlotId,
-    input.timetableEntryId,
+    assignment.timingSlotId,
+    assignment.timetableEntryId,
   );
   if (busy) {
     fail(409, "Replacement faculty is busy during the selected date and period");
@@ -567,10 +730,10 @@ export async function createSubstitutionDetails(
 
   const conflict = await hasConflictingSubstitution({
     sessionDate: input.sessionDate,
-    timetableEntryId: input.timetableEntryId,
-    timingSlotId: input.timingSlotId,
-    branchId: input.branchId,
-    sectionName: input.sectionName,
+    timetableEntryId: assignment.timetableEntryId,
+    timingSlotId: assignment.timingSlotId,
+    branchId: assignment.branchId,
+    sectionName: assignment.sectionName,
   });
   if (conflict) {
     fail(409, "A pending or approved substitution already exists for this class and date");

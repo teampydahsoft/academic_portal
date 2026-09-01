@@ -342,6 +342,7 @@ export async function getMyTimetable(
     },
     weekDays,
     assignments,
+    timetable: detail.timetable,
     source: detail.source,
     published: detail.assignments.length > 0,
   };

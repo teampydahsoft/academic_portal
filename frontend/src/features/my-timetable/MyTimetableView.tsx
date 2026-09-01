@@ -15,6 +15,7 @@ import {
   TimetableWeekNavigation,
 } from "./TimetableWeekNavigation";
 import { useMyTimetable } from "./useMyTimetable";
+import { WorkloadTimetableGrid } from "@/features/workload/WorkloadTimetableGrid";
 import {
   countWeekClasses,
   getTodayDayCode,
@@ -162,6 +163,12 @@ export function MyTimetableView() {
           />
           <DateSubstitutionsPanel sessionDate={now.toISOString().slice(0, 10)} />
         </>
+      ) : null}
+
+      {payload.timetable ? (
+        <div className="mb-4">
+          <WorkloadTimetableGrid timetable={payload.timetable} />
+        </div>
       ) : null}
 
       {weekClassCount === 0 ? (

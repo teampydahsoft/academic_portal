@@ -259,14 +259,15 @@ export function RequestWorkflowsView() {
       const res = await apiFetch(`/request-workflows/workflows/${workflowDetail.workflow.id}/steps`, {
         method: "PUT",
         body: JSON.stringify({
-          steps: draftSteps.map((step) => ({
+          steps: draftSteps.map((step, index) => ({
             id: step.id ?? undefined,
             stepKey: step.stepKey,
             label: step.label,
             approverRoleKey: step.approverRoleKey,
-            requiredPermission: step.requiredPermission,
+            requiredPermission: step.requiredPermission || "request.approve",
             scopeMode: step.scopeMode,
             allowEscalate: step.allowEscalate,
+            isFinal: index === draftSteps.length - 1,
           })),
         }),
       });

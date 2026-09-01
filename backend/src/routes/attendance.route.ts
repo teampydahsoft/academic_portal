@@ -2,10 +2,12 @@ import { Router } from "express";
 import type { AuthedRequest } from "../middleware/auth.middleware.js";
 import {
   ensureEntityScope,
+  getAuthz,
   requirePermission,
   scopedFilters,
   statusFromAuthzError,
 } from "../authz/require-permission.js";
+import { ownTeachingStaffLinkId } from "../authz/faculty-self-scope.js";
 import {
   getAttendanceAnalytics,
   getAttendanceSession,
@@ -41,12 +43,19 @@ function scopedQuery(req: AuthedRequest) {
   });
 }
 
+async function facultyFilter(req: AuthedRequest) {
+  const authz = getAuthz(req);
+  const staffLinkId = await ownTeachingStaffLinkId(authz);
+  return staffLinkId === undefined ? undefined : staffLinkId ?? -1;
+}
+
 attendanceRouter.get(
   "/sessions",
   requirePermission("attendance.view"),
   async (req: AuthedRequest, res, next) => {
     try {
       const scoped = scopedQuery(req);
+      const facultyStaffLinkId = await facultyFilter(req);
       const generate =
         req.query.generate === "false" || req.query.generate === "0" ? false : true;
       res.json(
@@ -63,6 +72,7 @@ attendanceRouter.get(
           section: str(req.query.section),
           academicYear: str(req.query.academicYear),
           generate,
+          ...(facultyStaffLinkId != null ? { facultyStaffLinkId } : {}),
         }),
       );
     } catch (error) {
@@ -82,6 +92,7 @@ attendanceRouter.get(
   async (req: AuthedRequest, res, next) => {
     try {
       const scoped = scopedQuery(req);
+      const facultyStaffLinkId = await facultyFilter(req);
       const payload = await listAttendanceSessions({
         collegeId: scoped.collegeId,
         collegeIds: scoped.collegeIds,
@@ -93,6 +104,7 @@ attendanceRouter.get(
         semester: num(req.query.semester),
         section: str(req.query.section),
         academicYear: str(req.query.academicYear),
+        ...(facultyStaffLinkId != null ? { facultyStaffLinkId } : {}),
       });
       res.json(payload);
     } catch (error) {
@@ -108,7 +120,7 @@ attendanceRouter.get(
 
 attendanceRouter.get(
   "/analytics",
-  requirePermission("attendance.view"),
+  requirePermission("attendance_analytics.view"),
   async (req: AuthedRequest, res, next) => {
     try {
       const scoped = scopedQuery(req);
@@ -152,6 +164,14 @@ attendanceRouter.get(
         collegeId: meta.collegeId,
         branchId: meta.branchId,
       });
+      const facultyStaffLinkId = await facultyFilter(req);
+      if (
+        facultyStaffLinkId != null &&
+        Number(meta.facultyStaffLinkId) !== facultyStaffLinkId
+      ) {
+        res.status(403).json({ message: "You can only view attendance for your own assigned classes" });
+        return;
+      }
       res.json(await getAttendanceSession(sessionId));
     } catch (error) {
       const status = statusFromError(error);
@@ -183,6 +203,7 @@ attendanceRouter.post(
         collegeId: meta.collegeId,
         branchId: meta.branchId,
       });
+      const facultyStaffLinkId = await facultyFilter(req);
       const body = req.body as {
         students?: Array<{
           studentDbId: number;
@@ -197,6 +218,7 @@ attendanceRouter.post(
         students: body.students ?? [],
         editReason: body.editReason,
         postedByUserId: req.authUser!.id,
+        requiredFacultyStaffLinkId: facultyStaffLinkId ?? undefined,
       });
       await writeAuditLog({
         actorUserId: req.authUser!.id,

@@ -38,26 +38,43 @@ const SCOPE_MODES = new Set([
 ]);
 
 function parseSteps(raw: unknown) {
-  if (!Array.isArray(raw)) return null;
-  return raw.map((item) => {
-    if (!item || typeof item !== "object") return null;
-    const step = item as Record<string, unknown>;
-    const scopeMode = str(step.scopeMode);
-    if (!scopeMode || !SCOPE_MODES.has(scopeMode)) return null;
-    const label = str(step.label);
-    const approverRoleKey = str(step.approverRoleKey);
-    if (!label || !approverRoleKey) return null;
-    return {
-      id: num(step.id) ?? null,
-      stepKey: str(step.stepKey),
-      label,
-      approverRoleKey,
-      requiredPermission: str(step.requiredPermission),
-      scopeMode: scopeMode as ScopeMode,
-      allowEscalate: Boolean(step.allowEscalate),
-      isFinal: Boolean(step.isFinal),
-    };
-  });
+  if (!Array.isArray(raw)) return { ok: false as const, message: "steps must be a JSON array" };
+  if (raw.length === 0) {
+    return { ok: false as const, message: "At least one approval step is required" };
+  }
+
+  const steps: NonNullable<ReturnType<typeof parseStepObject>>[] = [];
+  for (let index = 0; index < raw.length; index += 1) {
+    const parsed = parseStepObject(raw[index]);
+    if (!parsed) {
+      return {
+        ok: false as const,
+        message: `Step ${index + 1} is invalid: label, approverRoleKey, and scopeMode are required`,
+      };
+    }
+    steps.push(parsed);
+  }
+  return { ok: true as const, steps };
+}
+
+function parseStepObject(item: unknown) {
+  if (!item || typeof item !== "object") return null;
+  const step = item as Record<string, unknown>;
+  const scopeMode = str(step.scopeMode);
+  if (!scopeMode || !SCOPE_MODES.has(scopeMode)) return null;
+  const label = str(step.label);
+  const approverRoleKey = str(step.approverRoleKey);
+  if (!label || !approverRoleKey) return null;
+  return {
+    id: num(step.id) ?? null,
+    stepKey: str(step.stepKey),
+    label,
+    approverRoleKey,
+    requiredPermission: str(step.requiredPermission),
+    scopeMode: scopeMode as ScopeMode,
+    allowEscalate: Boolean(step.allowEscalate),
+    isFinal: Boolean(step.isFinal),
+  };
 }
 
 function handleError(error: unknown, res: import("express").Response, next: import("express").NextFunction) {
@@ -234,15 +251,15 @@ requestWorkflowsRouter.put(
         res.status(400).json({ message: "Invalid workflow id" });
         return;
       }
-      const steps = parseSteps(req.body?.steps);
-      if (!steps || steps.some((s) => !s)) {
-        res.status(400).json({ message: "steps array with valid step objects is required" });
+      const parsed = parseSteps(req.body?.steps);
+      if (!parsed.ok) {
+        res.status(400).json({ message: parsed.message });
         return;
       }
       const saved = await saveWorkflowSteps(
         getAuthz(req),
         workflowId,
-        steps.filter((s): s is NonNullable<typeof s> => Boolean(s)),
+        parsed.steps,
         req.ip,
       );
       res.json(saved);

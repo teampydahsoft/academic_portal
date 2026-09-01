@@ -48,7 +48,7 @@ function paramId(value: string | string[]): number {
 
 rolesRouter.get(
   "/permissions",
-  requirePermission("user_management.view", "user_management.manage_users"),
+  requirePermission("roles.view", "roles.manage"),
   async (_req, res, next) => {
     try {
       res.json({ data: await listPermissionsCatalog() });
@@ -60,7 +60,7 @@ rolesRouter.get(
 
 rolesRouter.get(
   "/",
-  requirePermission("user_management.view", "user_management.manage_users"),
+  requirePermission("roles.view", "roles.manage"),
   async (req, res, next) => {
     try {
       const includeInactive = String(req.query.includeInactive ?? "true") !== "false";
@@ -73,7 +73,7 @@ rolesRouter.get(
 
 rolesRouter.get(
   "/:id",
-  requirePermission("user_management.view", "user_management.manage_users"),
+  requirePermission("roles.view", "roles.manage"),
   async (req, res, next) => {
     try {
       const role = await getManagedRole(paramId(req.params.id));
@@ -88,7 +88,7 @@ rolesRouter.get(
   },
 );
 
-rolesRouter.post("/", requirePermission("user_management.manage_users"), async (req: AuthedRequest, res, next) => {
+rolesRouter.post("/", requirePermission("roles.manage"), async (req: AuthedRequest, res, next) => {
   try {
     const body = req.body ?? {};
     const created = await createRole({
@@ -108,7 +108,7 @@ rolesRouter.post("/", requirePermission("user_management.manage_users"), async (
   }
 });
 
-rolesRouter.put("/:id", requirePermission("user_management.manage_users"), async (req: AuthedRequest, res, next) => {
+rolesRouter.put("/:id", requirePermission("roles.manage"), async (req: AuthedRequest, res, next) => {
   try {
     const body = req.body ?? {};
     const updated = await updateRole({
@@ -129,7 +129,7 @@ rolesRouter.put("/:id", requirePermission("user_management.manage_users"), async
 
 rolesRouter.put(
   "/:id/permissions",
-  requirePermission("user_management.manage_users"),
+  requirePermission("roles.manage"),
   async (req: AuthedRequest, res, next) => {
     try {
       const body = req.body ?? {};
@@ -153,7 +153,7 @@ rolesRouter.put(
 
 rolesRouter.put(
   "/:id/status",
-  requirePermission("user_management.manage_users"),
+  requirePermission("roles.manage"),
   async (req: AuthedRequest, res, next) => {
     try {
       const body = req.body ?? {};
@@ -177,7 +177,7 @@ rolesRouter.put(
 
 rolesRouter.delete(
   "/:id",
-  requirePermission("user_management.manage_users"),
+  requirePermission("roles.manage"),
   async (req: AuthedRequest, res, next) => {
     try {
       const confirmImpact =

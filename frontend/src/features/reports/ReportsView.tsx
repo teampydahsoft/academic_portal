@@ -44,7 +44,7 @@ const REPORTS: ReportDef[] = [
     title: "Attendance",
     description: "Average attendance and pending class posting for today.",
     href: "/attendance-analytics",
-    permissions: ["attendance.view"],
+    permissions: ["attendance_analytics.view"],
     available: true,
   },
   {
@@ -118,7 +118,7 @@ export function ReportsView() {
       setLoading(true);
       setError(null);
       try {
-        const canDashboard = hasAnyPermission("dashboard.view");
+        const canDashboard = hasAnyPermission("dashboard.view", "reports.view");
         const canWorkload = hasAnyPermission("workload.view");
 
         const [summaryRes, workloadRes] = await Promise.all([
@@ -178,7 +178,7 @@ export function ReportsView() {
         return (
           <EmptyState
             title="Report not available yet"
-            description="Student summary requires dashboard.view access to Command Center data."
+            description="Student summary requires dashboard.view access to dashboard data."
             className="py-6"
           />
         );
@@ -201,7 +201,7 @@ export function ReportsView() {
         return (
           <EmptyState
             title="Report not available yet"
-            description="Attendance summary requires Command Center data."
+            description="Attendance summary requires dashboard data."
             className="py-6"
           />
         );
@@ -220,7 +220,7 @@ export function ReportsView() {
         return (
           <EmptyState
             title="Report not available yet"
-            description="Timetable coverage requires Command Center data."
+            description="Timetable coverage requires dashboard data."
             className="py-6"
           />
         );
@@ -262,7 +262,7 @@ export function ReportsView() {
         return (
           <EmptyState
             title="Report not available yet"
-            description="Examination summary requires Command Center data."
+            description="Examination summary requires dashboard data."
             className="py-6"
           />
         );

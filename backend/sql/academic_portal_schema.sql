@@ -166,6 +166,8 @@ CREATE TABLE IF NOT EXISTS ap_workload_thresholds (
   min_periods_per_week INT NOT NULL DEFAULT 8,
   max_periods_per_week INT NOT NULL DEFAULT 20,
   max_periods_per_day INT NOT NULL DEFAULT 5,
+  min_hours_per_week DECIMAL(6,2) NULL,
+  max_hours_per_week DECIMAL(6,2) NULL,
   is_active TINYINT(1) NOT NULL DEFAULT 1,
   created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

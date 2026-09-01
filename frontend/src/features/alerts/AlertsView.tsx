@@ -18,7 +18,7 @@ export function AlertsView() {
       />
       <EmptyState
         title="No alerts at this time"
-        description="There is no alerts API wired to this portal yet. Check Pending & Exceptions for actionable items derived from live modules, or the Command Center for scope-level signals."
+        description="There is no alerts API wired to this portal yet. Check Pending & Exceptions for actionable items derived from live modules, or the Dashboard for scope-level signals."
         action={
           <div className="flex flex-wrap justify-center gap-2">
             <Link href="/pending-exceptions">
@@ -26,9 +26,9 @@ export function AlertsView() {
                 Pending & Exceptions
               </Button>
             </Link>
-            <Link href="/command-center">
+            <Link href="/dashboard">
               <Button size="sm" variant="ghost">
-                Command Center
+                Dashboard
               </Button>
             </Link>
           </div>

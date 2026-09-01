@@ -39,8 +39,26 @@ export const PERMISSION_PRESENTATION: Record<
 > = {
   "dashboard.view": {
     key: "dashboard.view",
-    label: "View Command Center",
-    description: "Opens Overview dashboards including Command Center, Pending & Exceptions, Reports, and Alerts.",
+    label: "View Dashboard",
+    description: "Opens the dashboard overview for your access scope.",
+    kind: "read",
+  },
+  "pending_exceptions.view": {
+    key: "pending_exceptions.view",
+    label: "View Pending & Exceptions",
+    description: "View pending items and operational exceptions.",
+    kind: "read",
+  },
+  "reports.view": {
+    key: "reports.view",
+    label: "View Reports",
+    description: "Access the operational reports hub.",
+    kind: "read",
+  },
+  "alerts.view": {
+    key: "alerts.view",
+    label: "View Alerts",
+    description: "Access operational alerts.",
     kind: "read",
   },
   "students.view": {
@@ -57,8 +75,14 @@ export const PERMISSION_PRESENTATION: Record<
   },
   "timetable.view": {
     key: "timetable.view",
-    label: "View Timetable",
+    label: "View Timetable Planning",
     description: "View timetable plans, published schedules, and timing templates.",
+    kind: "read",
+  },
+  "my_timetable.view": {
+    key: "my_timetable.view",
+    label: "View My Timetable",
+    description: "View personal teaching timetable.",
     kind: "read",
   },
   "timetable.edit": {
@@ -77,8 +101,14 @@ export const PERMISSION_PRESENTATION: Record<
   },
   "attendance.view": {
     key: "attendance.view",
-    label: "View Attendance",
-    description: "View attendance sessions, posting screens, and attendance analytics.",
+    label: "View Attendance Posting",
+    description: "View attendance sessions and posting screens.",
+    kind: "read",
+  },
+  "attendance_analytics.view": {
+    key: "attendance_analytics.view",
+    label: "View Attendance Analytics",
+    description: "View attendance analytics and trends.",
     kind: "read",
   },
   "attendance.post": {
@@ -159,9 +189,22 @@ export const PERMISSION_PRESENTATION: Record<
   },
   "user_management.manage_users": {
     key: "user_management.manage_users",
-    label: "Manage Users & Roles",
+    label: "Manage Users",
     description:
-      "Link HRMS users, assign roles and college/branch scope, activate/deactivate users, and manage role permissions.",
+      "Link HRMS users, assign roles and college/branch scope, and activate/deactivate users.",
+    kind: "write",
+    sensitive: true,
+  },
+  "roles.view": {
+    key: "roles.view",
+    label: "View Roles & Permissions",
+    description: "View role definitions and the permission matrix.",
+    kind: "read",
+  },
+  "roles.manage": {
+    key: "roles.manage",
+    label: "Manage Roles & Permissions",
+    description: "Create, edit, and deactivate roles; assign permissions to roles.",
     kind: "write",
     sensitive: true,
   },
@@ -233,13 +276,13 @@ export const PERMISSION_PRESENTATION: Record<
 
 /**
  * Sidebar-ordered matrix. Mirrors NAV_GROUPS labels/hrefs.
- * Shared keys may appear under more than one nav item; UI toggles stay in sync.
+ * Each module uses its own permission keys so access can be granted independently.
  */
 export const PERMISSION_MATRIX_MODULES: MatrixModuleDef[] = [
   {
     group: "Overview",
-    label: "Command Center",
-    href: "/command-center",
+    label: "Dashboard",
+    href: "/dashboard",
     permissions: [asDef("dashboard.view")],
   },
   {
@@ -252,7 +295,7 @@ export const PERMISSION_MATRIX_MODULES: MatrixModuleDef[] = [
     group: "Academics",
     label: "My Timetable",
     href: "/my-timetable",
-    permissions: [asDef("timetable.view")],
+    permissions: [asDef("my_timetable.view")],
   },
   {
     group: "Academics",
@@ -282,8 +325,7 @@ export const PERMISSION_MATRIX_MODULES: MatrixModuleDef[] = [
     group: "Academics",
     label: "Attendance Analytics",
     href: "/attendance-analytics",
-    permissions: [asDef("attendance.view")],
-    accessNote: "Uses the same View Attendance permission as Attendance Posting.",
+    permissions: [asDef("attendance_analytics.view")],
   },
   {
     group: "Academics",
@@ -327,15 +369,13 @@ export const PERMISSION_MATRIX_MODULES: MatrixModuleDef[] = [
     group: "Operations",
     label: "Pending & Exceptions",
     href: "/pending-exceptions",
-    permissions: [asDef("dashboard.view")],
-    accessNote: "Uses Command Center / Overview access.",
+    permissions: [asDef("pending_exceptions.view")],
   },
   {
     group: "Operations",
     label: "Reports",
     href: "/reports",
-    permissions: [asDef("dashboard.view")],
-    accessNote: "Uses Command Center / Overview access.",
+    permissions: [asDef("reports.view")],
   },
   {
     group: "Operations",
@@ -347,14 +387,19 @@ export const PERMISSION_MATRIX_MODULES: MatrixModuleDef[] = [
     group: "Operations",
     label: "Alerts",
     href: "/alerts",
-    permissions: [asDef("dashboard.view")],
-    accessNote: "Uses Command Center / Overview access.",
+    permissions: [asDef("alerts.view")],
   },
   {
     group: "System",
     label: "User Management",
     href: "/user-management",
     permissions: [asDef("user_management.view"), asDef("user_management.manage_users")],
+  },
+  {
+    group: "System",
+    label: "Roles & Permissions",
+    href: "/settings/roles",
+    permissions: [asDef("roles.view"), asDef("roles.manage")],
   },
   {
     group: "System",

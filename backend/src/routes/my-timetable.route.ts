@@ -42,7 +42,7 @@ function filtersFromReq(req: AuthedRequest) {
 
 myTimetableRouter.get(
   "/day",
-  requirePermission("timetable.view"),
+  requirePermission("my_timetable.view"),
   async (req: AuthedRequest, res, next) => {
     try {
       const sessionDate = str(req.query.date);
@@ -65,7 +65,7 @@ myTimetableRouter.get(
 
 myTimetableRouter.get(
   "/",
-  requirePermission("timetable.view"),
+  requirePermission("my_timetable.view"),
   async (req: AuthedRequest, res, next) => {
     try {
       const hrmsEmployeeId = req.authUser?.hrmsEmployeeId ?? null;

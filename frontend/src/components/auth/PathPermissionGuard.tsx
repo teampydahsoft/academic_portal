@@ -18,6 +18,9 @@ function requiredPermissionsForPath(pathname: string): string[] | null {
     }
   }
 
+  if (pathname.startsWith("/settings/roles")) {
+    return ["roles.view", "roles.manage"];
+  }
   if (pathname.startsWith("/settings/request-workflows")) {
     return ["request.workflow.manage"];
   }
@@ -26,6 +29,21 @@ function requiredPermissionsForPath(pathname: string): string[] | null {
   }
   if (pathname.startsWith("/user-management")) {
     return ["user_management.view", "user_management.manage_users"];
+  }
+  if (pathname.startsWith("/pending-exceptions")) {
+    return ["pending_exceptions.view"];
+  }
+  if (pathname.startsWith("/reports")) {
+    return ["reports.view"];
+  }
+  if (pathname.startsWith("/alerts")) {
+    return ["alerts.view"];
+  }
+  if (pathname.startsWith("/my-timetable")) {
+    return ["my_timetable.view"];
+  }
+  if (pathname.startsWith("/attendance-analytics")) {
+    return ["attendance_analytics.view"];
   }
 
   return bestMatch?.permissions ?? null;

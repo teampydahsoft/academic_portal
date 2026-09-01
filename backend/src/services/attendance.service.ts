@@ -89,6 +89,7 @@ export type AttendanceListFilters = {
   section?: string;
   academicYear?: string;
   generate?: boolean;
+  facultyStaffLinkId?: number;
 };
 
 function holidayScopeFromRow(row: {
@@ -212,6 +213,10 @@ export async function listAttendanceSessions(filters: AttendanceListFilters) {
   if (filters.academicYear) {
     where.push("p.academic_year_label = ?");
     params.push(filters.academicYear);
+  }
+  if (filters.facultyStaffLinkId != null) {
+    where.push("cs.faculty_staff_link_id = ?");
+    params.push(filters.facultyStaffLinkId);
   }
 
   const rows = await queryAcademic<SessionListRow[]>(
@@ -453,11 +458,22 @@ export async function postAttendance(
     editReason?: string | null;
     /** Authenticated Academic Portal user id. Falls back to system user only when omitted (jobs). */
     postedByUserId?: number | null;
+    /** When set, only the assigned faculty may post this session. */
+    requiredFacultyStaffLinkId?: number | null;
   },
 ) {
   const row = await loadSessionContext(sessionId);
   if (!row) {
     throw Object.assign(new Error("Class session not found"), { status: 404 });
+  }
+  if (
+    input.requiredFacultyStaffLinkId != null &&
+    Number(row.faculty_staff_link_id) !== Number(input.requiredFacultyStaffLinkId)
+  ) {
+    throw Object.assign(
+      new Error("You can only post attendance for your own assigned classes"),
+      { status: 403 },
+    );
   }
   if (row.status === "cancelled") {
     throw Object.assign(new Error("This class session is cancelled"), { status: 400 });

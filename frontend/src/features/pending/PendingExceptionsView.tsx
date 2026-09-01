@@ -47,6 +47,7 @@ export function PendingExceptionsView() {
   const canAttendance = hasAnyPermission("attendance.view", "attendance.post");
   const canWorkload = hasAnyPermission("workload.view");
   const canDashboard = hasAnyPermission("dashboard.view");
+  const canPending = hasAnyPermission("pending_exceptions.view");
 
   const [items, setItems] = useState<PendingItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -74,7 +75,7 @@ export function PendingExceptionsView() {
       const next: PendingItem[] = [];
       const notes: string[] = [];
 
-      if (canDashboard) {
+      if (canPending || canDashboard) {
         try {
           const ccParams = new URLSearchParams();
           if (filters.collegeId !== "all") ccParams.set("collegeId", String(filters.collegeId));
@@ -99,7 +100,7 @@ export function PendingExceptionsView() {
                 owner: "Academic Admin",
                 href: "/timetables",
                 status: "Open",
-                meta: "From Command Center coverage",
+                meta: "From dashboard coverage",
               });
             }
             if (summary.studentsBelowThreshold > 0) {
@@ -111,14 +112,14 @@ export function PendingExceptionsView() {
                 owner: "Academic staff",
                 href: "/mentoring-risks",
                 status: "Open",
-                meta: "Last 90 days · Command Center",
+                meta: "Last 90 days · Dashboard",
               });
             }
           } else {
-            notes.push(`Command Center unavailable (${response.status})`);
+            notes.push(`Dashboard unavailable (${response.status})`);
           }
         } catch {
-          notes.push("Command Center could not be loaded");
+          notes.push("Dashboard could not be loaded");
         }
       }
 

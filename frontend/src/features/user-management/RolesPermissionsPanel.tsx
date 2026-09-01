@@ -359,18 +359,22 @@ export function RolesPermissionsPanel({ canManage }: Props) {
   }
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
-      <Card className="h-fit">
-        <div className="mb-3 flex items-center justify-between gap-2">
-          <h3 className="text-sm font-semibold text-navy-900">Roles</h3>
+    <div className="space-y-4">
+      <Card>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h3 className="text-sm font-semibold text-navy-900">Roles</h3>
+            <p className="text-xs text-slate-500">Select a role to review or edit its permissions.</p>
+          </div>
           {canManage ? (
             <Button variant="secondary" onClick={() => setCreateOpen((v) => !v)}>
-              {createOpen ? "Cancel" : "Create"}
+              {createOpen ? "Cancel" : "Create role"}
             </Button>
           ) : null}
         </div>
+
         {createOpen ? (
-          <div className="mb-4 space-y-2 rounded-md border border-border p-3">
+          <div className="mb-4 space-y-2 rounded-md border border-border bg-slate-50 p-3">
             <input
               className={inputClass}
               placeholder="Role name"
@@ -396,32 +400,24 @@ export function RolesPermissionsPanel({ canManage }: Props) {
             </Button>
           </div>
         ) : null}
-        <ul className="space-y-1">
+
+        <div className="flex flex-wrap gap-2">
           {roles.map((role) => (
-            <li key={role.id}>
-              <button
-                type="button"
-                className={`flex w-full items-center justify-between rounded-md px-2 py-2 text-left text-sm ${
-                  selectedId === role.id ? "bg-navy-50 text-navy-900" : "hover:bg-slate-50"
-                }`}
-                onClick={() => selectRole(role.id)}
-              >
-                <span>
-                  {role.label}
-                  <span className="mt-0.5 block text-[11px] text-slate-500">
-                    {role.roleKey}
-                    {Number(role.activeUserCount ?? 0) > 0
-                      ? ` · ${role.activeUserCount} active`
-                      : role.assignmentCount > 0
-                        ? ` · ${role.assignmentCount} assigned`
-                        : ""}
-                  </span>
-                </span>
-                <StatusBadge status={role.isActive ? "active" : "inactive"} />
-              </button>
-            </li>
+            <button
+              key={role.id}
+              type="button"
+              className={`inline-flex max-w-full items-center gap-2 rounded-full border px-3 py-1.5 text-left text-sm transition-colors ${
+                selectedId === role.id
+                  ? "border-navy-800 bg-navy-800 text-white"
+                  : "border-border bg-white text-navy-900 hover:border-navy-700/40 hover:bg-slate-50"
+              }`}
+              onClick={() => selectRole(role.id)}
+            >
+              <span className="font-medium">{role.label}</span>
+              <StatusBadge status={role.isActive ? "active" : "inactive"} />
+            </button>
           ))}
-        </ul>
+        </div>
       </Card>
 
       <div className="space-y-4">
@@ -615,106 +611,117 @@ export function RolesPermissionsPanel({ canManage }: Props) {
               </p>
             </Card>
 
-            {navGroups.map((group) => (
-              <Card key={group.title}>
-                <h4 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  {group.title}
-                </h4>
-                <div className="space-y-5">
-                  {group.items.map((mod) => {
-                    const level = moduleAccessState(mod, enabled);
-                    const reads = mod.permissions.filter((p) => p.kind === "read");
-                    const writes = mod.permissions.filter((p) => p.kind === "write");
-                    const hasWrites = writes.length > 0;
+            <Card className="overflow-hidden p-0">
+              <div className="border-b border-border bg-slate-50 px-4 py-3">
+                <h4 className="text-sm font-semibold text-navy-900">Permission matrix</h4>
+                <p className="text-xs text-slate-500">
+                  All modules in one view. Use quick actions per row or toggle individual permissions.
+                </p>
+              </div>
 
-                    return (
-                      <div key={mod.href} className="border-t border-border pt-4 first:border-t-0 first:pt-0">
-                        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                          <div>
-                            <h5 className="text-sm font-semibold text-navy-900">{mod.label}</h5>
-                            {mod.accessNote ? (
-                              <p className="text-[11px] text-slate-500">{mod.accessNote}</p>
-                            ) : null}
-                          </div>
-                          {canManage ? (
-                            <div className="flex flex-wrap gap-1">
-                              <ModuleLevelButton
-                                active={level === "none"}
-                                disabled={busy}
-                                label="No access"
-                                onClick={() => applyModuleLevel(mod, "none")}
-                              />
-                              <ModuleLevelButton
-                                active={level === "view"}
-                                disabled={busy || reads.length === 0}
-                                label="View"
-                                onClick={() => applyModuleLevel(mod, "view")}
-                              />
-                              {hasWrites ? (
-                                <ModuleLevelButton
-                                  active={level === "manage"}
-                                  disabled={busy}
-                                  label="Manage"
-                                  onClick={() => applyModuleLevel(mod, "manage")}
-                                />
-                              ) : null}
-                              {level === "partial" ? (
-                                <span className="self-center text-[11px] text-amber-700">Partial</span>
+              <div className="divide-y divide-border">
+                {navGroups.map((group) => (
+                  <section key={group.title} className="px-4 py-4">
+                    <h5 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      {group.title}
+                    </h5>
+                    <div className="space-y-4">
+                      {group.items.map((mod) => {
+                        const level = moduleAccessState(mod, enabled);
+                        const reads = mod.permissions.filter((p) => p.kind === "read");
+                        const writes = mod.permissions.filter((p) => p.kind === "write");
+                        const hasWrites = writes.length > 0;
+
+                        return (
+                          <div
+                            key={mod.href}
+                            className="rounded-lg border border-border bg-white p-3"
+                          >
+                            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                              <div className="min-w-0 flex-1">
+                                <h6 className="text-sm font-semibold text-navy-900">{mod.label}</h6>
+                                {mod.accessNote ? (
+                                  <p className="text-[11px] text-slate-500">{mod.accessNote}</p>
+                                ) : null}
+                              </div>
+                              {canManage ? (
+                                <div className="flex flex-wrap gap-1">
+                                  <ModuleLevelButton
+                                    active={level === "none"}
+                                    disabled={busy}
+                                    label="No access"
+                                    onClick={() => applyModuleLevel(mod, "none")}
+                                  />
+                                  <ModuleLevelButton
+                                    active={level === "view"}
+                                    disabled={busy || reads.length === 0}
+                                    label="View"
+                                    onClick={() => applyModuleLevel(mod, "view")}
+                                  />
+                                  {hasWrites ? (
+                                    <ModuleLevelButton
+                                      active={level === "manage"}
+                                      disabled={busy}
+                                      label="Manage"
+                                      onClick={() => applyModuleLevel(mod, "manage")}
+                                    />
+                                  ) : null}
+                                  {level === "partial" ? (
+                                    <span className="self-center text-[11px] text-amber-700">Partial</span>
+                                  ) : null}
+                                </div>
                               ) : null}
                             </div>
-                          ) : null}
-                        </div>
 
-                        {reads.length > 0 ? (
-                          <PermissionSection
-                            title="Read access"
-                            items={reads}
-                            enabled={enabled}
-                            canManage={canManage}
-                            busy={busy}
-                            onToggle={toggleKey}
-                          />
-                        ) : null}
-                        {writes.length > 0 ? (
-                          <PermissionSection
-                            title="Write / action access"
-                            items={writes}
-                            enabled={enabled}
-                            canManage={canManage}
-                            busy={busy}
-                            onToggle={toggleKey}
-                            className="mt-3"
-                          />
-                        ) : null}
-                      </div>
-                    );
-                  })}
-                </div>
-              </Card>
-            ))}
+                            <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                              {[...reads, ...writes].map((perm) => (
+                                <PermissionToggle
+                                  key={perm.key}
+                                  perm={perm}
+                                  checked={enabled.has(perm.key)}
+                                  canManage={canManage}
+                                  busy={busy}
+                                  onToggle={toggleKey}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </section>
+                ))}
 
-            {unmappedCatalog.length > 0 ? (
-              <Card>
-                <h4 className="mb-2 text-sm font-semibold text-navy-900">Additional catalog permissions</h4>
-                <p className="mb-3 text-xs text-slate-500">
-                  Present in the API catalog but not tied to a current sidebar item.
-                </p>
-                <PermissionSection
-                  title="Other"
-                  items={unmappedCatalog.map((p) => ({
-                    key: p.permissionKey,
-                    label: p.displayName || p.permissionKey,
-                    description: p.description || PERMISSION_PRESENTATION[p.permissionKey]?.description || "",
-                    kind: p.permissionKey.includes(".view") ? ("read" as const) : ("write" as const),
-                    sensitive: Boolean(PERMISSION_PRESENTATION[p.permissionKey]?.sensitive),
-                  }))}
-                  enabled={enabled}
-                  canManage={canManage}
-                  busy={busy}
-                  onToggle={toggleKey}
-                />
-              </Card>
-            ) : null}
+                {unmappedCatalog.length > 0 ? (
+                  <section className="px-4 py-4">
+                    <h5 className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Additional catalog permissions
+                    </h5>
+                    <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                      {unmappedCatalog.map((p) => (
+                        <PermissionToggle
+                          key={p.permissionKey}
+                          perm={{
+                            key: p.permissionKey,
+                            label: p.displayName || p.permissionKey,
+                            description:
+                              p.description ||
+                              PERMISSION_PRESENTATION[p.permissionKey]?.description ||
+                              "",
+                            kind: p.permissionKey.includes(".view") ? "read" : "write",
+                            sensitive: Boolean(PERMISSION_PRESENTATION[p.permissionKey]?.sensitive),
+                          }}
+                          checked={enabled.has(p.permissionKey)}
+                          canManage={canManage}
+                          busy={busy}
+                          onToggle={toggleKey}
+                        />
+                      ))}
+                    </div>
+                  </section>
+                ) : null}
+              </div>
+            </Card>
 
             {missingFromApi.length > 0 ? (
               <Card>
@@ -883,58 +890,48 @@ function ModuleLevelButton(props: {
   );
 }
 
-function PermissionSection(props: {
-  title: string;
-  items: Array<{
+function PermissionToggle(props: {
+  perm: {
     key: string;
     label: string;
     description: string;
     kind: "read" | "write";
     sensitive?: boolean;
-  }>;
-  enabled: Set<string>;
+  };
+  checked: boolean;
   canManage: boolean;
   busy: boolean;
   onToggle: (key: string, on: boolean) => void;
-  className?: string;
 }) {
   return (
-    <div className={props.className}>
-      <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-        {props.title}
-      </p>
-      <div className="space-y-2">
-        {props.items.map((perm) => {
-          const checked = props.enabled.has(perm.key);
-          return (
-            <label
-              key={`${props.title}-${perm.key}`}
-              className={`flex items-start gap-3 rounded-md border px-3 py-2.5 text-sm ${
-                perm.sensitive ? "border-amber-200 bg-amber-50/40" : "border-border bg-white"
-              }`}
-            >
-              <input
-                type="checkbox"
-                className="mt-1"
-                disabled={!props.canManage || props.busy}
-                checked={checked}
-                onChange={(e) => props.onToggle(perm.key, e.target.checked)}
-              />
-              <span className="min-w-0 flex-1">
-                <span className="flex flex-wrap items-center gap-2">
-                  <span className="font-medium text-navy-900">{perm.label}</span>
-                  {perm.sensitive ? (
-                    <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800">
-                      Sensitive action
-                    </span>
-                  ) : null}
-                </span>
-                <span className="mt-0.5 block text-xs text-slate-600">{perm.description}</span>
-              </span>
-            </label>
-          );
-        })}
-      </div>
-    </div>
+    <label
+      className={`flex items-start gap-2 rounded-md border px-2.5 py-2 text-sm ${
+        props.perm.sensitive ? "border-amber-200 bg-amber-50/40" : "border-border bg-slate-50/60"
+      }`}
+    >
+      <input
+        type="checkbox"
+        className="mt-0.5"
+        disabled={!props.canManage || props.busy}
+        checked={props.checked}
+        onChange={(e) => props.onToggle(props.perm.key, e.target.checked)}
+      />
+      <span className="min-w-0 flex-1">
+        <span className="flex flex-wrap items-center gap-1.5">
+          <span className="font-medium text-navy-900">{props.perm.label}</span>
+          <span className="text-[10px] uppercase tracking-wide text-slate-400">
+            {props.perm.kind === "read" ? "Read" : "Write"}
+          </span>
+          {props.perm.sensitive ? (
+            <span className="rounded bg-amber-100 px-1 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-amber-800">
+              Sensitive
+            </span>
+          ) : null}
+        </span>
+        <span className="mt-0.5 block text-[11px] leading-snug text-slate-600">
+          {props.perm.description}
+        </span>
+      </span>
+    </label>
   );
 }

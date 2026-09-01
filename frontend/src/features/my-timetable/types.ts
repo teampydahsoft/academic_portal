@@ -57,6 +57,7 @@ export type MyTimetableResponse = {
     sections: number;
   } | null;
   weekDays: MyTimetableDay[];
+  timetable: import("@/features/workload/WorkloadTimetableGrid").FacultyTimetable | null;
   source: string | null;
   published: boolean;
 };

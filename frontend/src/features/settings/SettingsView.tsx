@@ -5,66 +5,80 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { useAuth } from "@/components/auth/AuthProvider";
 
-const sections = [
+type SettingsSection = {
+  title: string;
+  description: string;
+  href?: string;
+  /** User needs any one of these permissions to see the card. */
+  permissions?: string[];
+};
+
+const sections: SettingsSection[] = [
   {
     title: "User Management",
-    description: "Link HRMS users, assign Academic Portal roles, and manage college/branch scope.",
+    description: "Create portal users, link HRMS staff, assign roles, and set college/branch scope.",
     href: "/user-management",
+    permissions: ["user_management.view", "user_management.manage_users"],
+  },
+  {
+    title: "Roles & Permissions",
+    description: "Manage role definitions and the permission matrix for Academic Portal access.",
+    href: "/settings/roles",
+    permissions: ["roles.view", "roles.manage"],
   },
   {
     title: "Semester Dates",
     description: "View and update academic start / end dates from Student Database.",
     href: "/settings/semester-dates",
+    permissions: ["settings.view", "semester_dates.view", "semester_dates.edit"],
   },
   {
     title: "Faculty & Departments Display",
-    description:
-      "Enable which HRMS employee groups appear on Faculty & Departments.",
+    description: "Enable which HRMS employee groups appear on Faculty & Departments.",
     href: "/settings/faculty-display",
+    permissions: ["settings.view", "settings.edit"],
   },
   {
     title: "Request Workflows",
     description: "Configure request types and dynamic approval hierarchies.",
     href: "/settings/request-workflows",
-    permission: "request.workflow.manage",
-  },
-  {
-    title: "Roles",
-    description: "Managed via User Management (role → permission matrix is server-side).",
-  },
-  {
-    title: "Permissions",
-    description: "Read-only derived permissions are shown on each user in User Management.",
-  },
-  {
-    title: "Attendance Thresholds",
-    description: "Configuration panel",
+    permissions: ["request.workflow.manage"],
   },
   {
     title: "Workload Thresholds",
-    description: "Configuration panel",
+    description: "Minimum / maximum teaching periods and hours per week for staff workload status.",
+    href: "/settings/workload-thresholds",
+    permissions: ["settings.view", "settings.edit"],
+  },
+  {
+    title: "Attendance Thresholds",
+    description: "Risk and posting thresholds (coming soon).",
+    permissions: ["settings.view"],
   },
   {
     title: "Academic Configuration",
-    description: "Configuration panel",
+    description: "College-wide academic defaults (coming soon).",
+    permissions: ["settings.view"],
   },
   {
     title: "Integration Status",
-    description: "Configuration panel",
+    description: "HRMS and database connection health (coming soon).",
+    permissions: ["settings.view"],
   },
 ];
 
 export function SettingsView() {
-  const { hasPermission } = useAuth();
+  const { hasAnyPermission } = useAuth();
   const visibleSections = sections.filter(
-    (section) => !section.permission || hasPermission(section.permission),
+    (section) =>
+      !section.permissions?.length || hasAnyPermission(...section.permissions),
   );
 
   return (
     <div>
       <PageHeader
         title="Settings, Roles & Access Control"
-        description="Configuration for roles, thresholds and integration health. Database credentials are not exposed here."
+        description="Portal configuration, role permissions, thresholds, and integration health."
       />
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {visibleSections.map((section) =>
@@ -76,7 +90,7 @@ export function SettingsView() {
               </Card>
             </Link>
           ) : (
-            <Card key={section.title}>
+            <Card key={section.title} className="h-full opacity-80">
               <h3 className="font-semibold text-navy-900">{section.title}</h3>
               <p className="mt-1 text-sm text-slate-500">{section.description}</p>
             </Card>

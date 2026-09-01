@@ -10,8 +10,18 @@ export async function apiFetch(path: string, init: RequestInit = {}) {
     ? path
     : `${API_BASE_URL}${path.startsWith("/") ? path : `/${path}`}`;
 
+  const headers = new Headers(init.headers);
+  if (
+    init.body != null &&
+    typeof init.body === "string" &&
+    !headers.has("Content-Type")
+  ) {
+    headers.set("Content-Type", "application/json");
+  }
+
   return fetch(url, {
     ...init,
+    headers,
     credentials: "include",
     cache: init.cache ?? "no-store",
   });

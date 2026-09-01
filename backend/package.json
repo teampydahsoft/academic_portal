@@ -15,6 +15,8 @@
     "db:seed:timings": "tsx src/scripts/seed-default-timings.ts",
     "db:seed:super-admin": "tsx src/scripts/seed-super-admin.ts",
     "db:migrate:rbac": "tsx src/scripts/migrate-rbac-permissions.ts",
+    "db:migrate:module-permissions": "tsx src/scripts/migrate-module-permissions.ts",
+    "db:sync:faculty-role": "tsx src/scripts/sync-faculty-role-permissions.ts",
     "db:migrate:requests": "tsx src/scripts/migrate-request-workflow.ts",
     "test:authz": "tsx src/scripts/verify-authz.ts",
     "test:user-management": "tsx src/scripts/verify-user-management.ts",

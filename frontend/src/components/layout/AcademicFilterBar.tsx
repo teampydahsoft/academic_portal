@@ -23,6 +23,8 @@ const HIDDEN_ON = [
   "/attendance-calendar",
   "/user-management",
   "/staff-workload",
+  "/my-timetable",
+  "/requests",
 ];
 
 type Props = {
@@ -161,6 +163,9 @@ export function AcademicFilterBar({ title = "Filters" }: Props) {
     filters.batch,
     setFilters,
   ]);
+
+  const isGlobalScope = authorization?.scope?.isGlobal ?? true;
+  const showAllColleges = isGlobalScope && (masters?.colleges.length ?? 0) > 1;
 
   const coursesForCollege = useMemo(() => {
     if (!masters) return [];
@@ -397,7 +402,7 @@ export function AcademicFilterBar({ title = "Filters" }: Props) {
                   })
                 }
               >
-                <option value="all">All Colleges</option>
+                {showAllColleges ? <option value="all">All Colleges</option> : null}
                 {(masters?.colleges ?? []).map((college) => (
                   <option key={college.id} value={college.id}>
                     {college.name}
@@ -616,7 +621,7 @@ export function AcademicFilterBar({ title = "Filters" }: Props) {
               })
             }
           >
-            <option value="all">All Colleges</option>
+            {showAllColleges ? <option value="all">All Colleges</option> : null}
             {(masters?.colleges ?? []).map((college) => (
               <option key={college.id} value={college.id}>
                 {college.name}

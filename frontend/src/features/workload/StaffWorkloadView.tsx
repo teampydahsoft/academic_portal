@@ -59,6 +59,8 @@ export type WorkloadSummary = {
     minPeriodsPerWeek: number;
     maxPeriodsPerWeek: number;
     maxPeriodsPerDay: number;
+    minHoursPerWeek: number | null;
+    maxHoursPerWeek: number | null;
   };
   faculty: FacultyLoad[];
   filterOptions?: {
@@ -220,7 +222,10 @@ export function StaffWorkloadView() {
           value={kpis.averageLoad}
           hint={
             summary?.thresholds
-              ? `Balanced ${summary.thresholds.minPeriodsPerWeek}–${summary.thresholds.maxPeriodsPerWeek}`
+              ? `Balanced ${summary.thresholds.minPeriodsPerWeek}–${summary.thresholds.maxPeriodsPerWeek} periods` +
+                (summary.thresholds.minHoursPerWeek != null
+                  ? ` · min ${summary.thresholds.minHoursPerWeek}h`
+                  : "")
               : "From published CLASS slots"
           }
         />

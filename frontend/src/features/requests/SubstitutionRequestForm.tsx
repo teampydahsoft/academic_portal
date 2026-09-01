@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
-import { Card } from "@/components/ui/Card";
+import { Modal } from "@/components/ui/Modal";
 import { useAcademicContext } from "@/components/layout/AcademicProvider";
+import { useAuth } from "@/components/auth/AuthProvider";
+import { isTeachingStaffOnly } from "@/lib/teaching-scope";
 import { apiFetch } from "@/lib/api";
 
 type PeriodOption = {
@@ -13,6 +15,18 @@ type PeriodOption = {
   startTime: string;
   endTime: string;
   subjectName: string | null;
+};
+
+type MyClassOption = PeriodOption & {
+  timetableEntryId: number;
+  sectionName: string;
+  batch: string;
+  collegeId: number;
+  courseId: number;
+  branchId: number;
+  yearOfStudy: number | null;
+  semesterNumber: number | null;
+  academicYear: string;
 };
 
 type ResolvedClass = {
@@ -42,6 +56,8 @@ type FacultyAvailability = {
   name: string;
   hrmsEmployeeId: string;
   department: string | null;
+  division?: string | null;
+  college?: string | null;
   available: boolean;
   busyWith: { subjectName: string | null; sectionName: string | null } | null;
 };
@@ -50,136 +66,264 @@ type Props = {
   onCancel: () => void;
 };
 
+const inputClass =
+  "h-11 w-full rounded-md border border-border bg-white px-3 text-sm outline-none focus:border-navy-800";
+
 export function SubstitutionRequestForm({ onCancel }: Props) {
   const router = useRouter();
+  const { authorization } = useAuth();
+  const teachingStaffOnly = isTeachingStaffOnly(authorization);
   const { filters, masters } = useAcademicContext();
 
-  const [step, setStep] = useState(1);
   const [sessionDate, setSessionDate] = useState("");
   const [periods, setPeriods] = useState<PeriodOption[]>([]);
+  const [myClasses, setMyClasses] = useState<MyClassOption[]>([]);
+  const [selectedMyClassIndex, setSelectedMyClassIndex] = useState<number | "">("");
   const [timingSlotId, setTimingSlotId] = useState<number | "">("");
   const [resolvedClass, setResolvedClass] = useState<ResolvedClass | null>(null);
+  const [resolvingClass, setResolvingClass] = useState(false);
   const [facultySearch, setFacultySearch] = useState("");
   const [facultyOptions, setFacultyOptions] = useState<FacultyAvailability[]>([]);
+  const [searchingFaculty, setSearchingFaculty] = useState(false);
   const [replacementStaffLinkId, setReplacementStaffLinkId] = useState<number | "">("");
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const scope = useMemo(() => {
-    const collegeId = filters.collegeId !== "all" ? Number(filters.collegeId) : null;
-    const courseId = filters.courseId !== "all" ? Number(filters.courseId) : null;
-    const branchId = filters.branchId !== "all" ? Number(filters.branchId) : null;
-    const batch = filters.batch !== "all" ? String(filters.batch) : null;
-    const year = filters.year !== "all" ? Number(filters.year) : null;
-    const semester = filters.semester !== "all" ? Number(filters.semester) : null;
-    const section = filters.section !== "all" ? String(filters.section) : null;
-    const academicYear = filters.academicYear || null;
-    return { collegeId, courseId, branchId, batch, year, semester, section, academicYear };
-  }, [filters]);
+  const selectedMyClass =
+    teachingStaffOnly && selectedMyClassIndex !== ""
+      ? myClasses[selectedMyClassIndex] ?? null
+      : null;
 
-  const scopeReady =
-    scope.collegeId &&
-    scope.courseId &&
-    scope.branchId &&
-    scope.batch &&
-    scope.section &&
-    scope.year != null &&
-    scope.semester != null;
+  const adminScope = useMemo(() => {
+    if (teachingStaffOnly) return null;
+    return {
+      collegeId: filters.collegeId !== "all" ? Number(filters.collegeId) : null,
+      courseId: filters.courseId !== "all" ? Number(filters.courseId) : null,
+      branchId: filters.branchId !== "all" ? Number(filters.branchId) : null,
+      batch: filters.batch !== "all" ? String(filters.batch) : null,
+      year: filters.year !== "all" ? Number(filters.year) : null,
+      semester: filters.semester !== "all" ? Number(filters.semester) : null,
+      section: filters.section !== "all" ? String(filters.section) : null,
+      academicYear: filters.academicYear || null,
+    };
+  }, [
+    teachingStaffOnly,
+    filters.collegeId,
+    filters.courseId,
+    filters.branchId,
+    filters.batch,
+    filters.year,
+    filters.semester,
+    filters.section,
+    filters.academicYear,
+  ]);
+
+  const adminScopeReady = Boolean(
+    adminScope?.collegeId &&
+      adminScope.courseId &&
+      adminScope.branchId &&
+      adminScope.batch &&
+      adminScope.section &&
+      adminScope.year != null &&
+      adminScope.semester != null,
+  );
+
+  const classSelectionReady = teachingStaffOnly
+    ? selectedMyClass != null
+    : adminScopeReady && typeof timingSlotId === "number";
 
   useEffect(() => {
-    if (!scopeReady || !sessionDate) {
+    if (!teachingStaffOnly) return;
+    if (!sessionDate) {
+      setMyClasses([]);
+      return;
+    }
+    let cancelled = false;
+    void apiFetch(`/faculty-substitutions/my-classes?sessionDate=${sessionDate}`, {
+      cache: "no-store",
+    })
+      .then(async (res) => {
+        const body = await res.json().catch(() => ({}));
+        if (cancelled) return;
+        setMyClasses(res.ok ? ((body as { data: MyClassOption[] }).data ?? []) : []);
+      })
+      .catch(() => {
+        if (!cancelled) setMyClasses([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [teachingStaffOnly, sessionDate]);
+
+  useEffect(() => {
+    if (teachingStaffOnly || !adminScopeReady || !sessionDate || !adminScope) {
       setPeriods([]);
       return;
     }
+    let cancelled = false;
     const params = new URLSearchParams({
       sessionDate,
-      collegeId: String(scope.collegeId),
-      courseId: String(scope.courseId),
-      branchId: String(scope.branchId),
-      batch: scope.batch!,
-      sectionName: scope.section!,
-      yearOfStudy: String(scope.year),
-      semesterNumber: String(scope.semester),
+      collegeId: String(adminScope.collegeId),
+      courseId: String(adminScope.courseId),
+      branchId: String(adminScope.branchId),
+      batch: adminScope.batch!,
+      sectionName: adminScope.section!,
+      yearOfStudy: String(adminScope.year),
+      semesterNumber: String(adminScope.semester),
     });
-    if (scope.academicYear) params.set("academicYear", scope.academicYear);
-
+    if (adminScope.academicYear) params.set("academicYear", adminScope.academicYear);
     void apiFetch(`/faculty-substitutions/periods?${params}`, { cache: "no-store" })
       .then(async (res) => {
         const body = await res.json().catch(() => ({}));
-        if (!res.ok) return;
+        if (cancelled || !res.ok) return;
         setPeriods((body as { data: PeriodOption[] }).data ?? []);
       })
       .catch(() => undefined);
-  }, [scopeReady, sessionDate, scope]);
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    teachingStaffOnly,
+    adminScopeReady,
+    sessionDate,
+    adminScope?.collegeId,
+    adminScope?.courseId,
+    adminScope?.branchId,
+    adminScope?.batch,
+    adminScope?.section,
+    adminScope?.year,
+    adminScope?.semester,
+    adminScope?.academicYear,
+  ]);
 
-  async function resolveClass() {
-    if (!scopeReady || !sessionDate || !timingSlotId) {
-      setError("Select academic scope, date, and period.");
+  const resolveClass = useCallback(async () => {
+    if (!sessionDate || !classSelectionReady) return null;
+
+    let payload: Record<string, unknown> | null = null;
+    if (teachingStaffOnly && selectedMyClass) {
+      payload = { sessionDate, timetableEntryId: selectedMyClass.timetableEntryId };
+    } else if (!teachingStaffOnly && adminScope && typeof timingSlotId === "number") {
+      payload = {
+        sessionDate,
+        collegeId: adminScope.collegeId,
+        courseId: adminScope.courseId,
+        branchId: adminScope.branchId,
+        batch: adminScope.batch,
+        yearOfStudy: adminScope.year,
+        semesterNumber: adminScope.semester,
+        sectionName: adminScope.section,
+        timingSlotId,
+        academicYear: adminScope.academicYear,
+      };
+    }
+    if (!payload) return null;
+
+    const response = await apiFetch("/faculty-substitutions/resolve-class", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error((body as { message?: string }).message ?? "Could not resolve class");
+    }
+    return body as ResolvedClass;
+  }, [
+    sessionDate,
+    classSelectionReady,
+    teachingStaffOnly,
+    selectedMyClass,
+    adminScope,
+    timingSlotId,
+  ]);
+
+  useEffect(() => {
+    if (!classSelectionReady || !sessionDate) {
+      setResolvedClass(null);
+      setReplacementStaffLinkId("");
+      setFacultyOptions([]);
       return;
     }
-    setBusy(true);
-    setError(null);
-    try {
-      const response = await apiFetch("/faculty-substitutions/resolve-class", {
-        method: "POST",
-        body: JSON.stringify({
-          sessionDate,
-          collegeId: scope.collegeId,
-          courseId: scope.courseId,
-          branchId: scope.branchId,
-          batch: scope.batch,
-          yearOfStudy: scope.year,
-          semesterNumber: scope.semester,
-          sectionName: scope.section,
-          timingSlotId,
-          academicYear: scope.academicYear,
-        }),
-      });
-      const body = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error((body as { message?: string }).message ?? "Could not resolve class");
-      }
-      setResolvedClass(body as ResolvedClass);
-      setStep(3);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not resolve class");
-    } finally {
-      setBusy(false);
-    }
-  }
 
-  async function loadFaculty() {
-    if (!resolvedClass || !sessionDate) return;
-    setBusy(true);
+    let cancelled = false;
+    setResolvingClass(true);
     setError(null);
-    try {
+
+    void resolveClass()
+      .then((resolved) => {
+        if (cancelled) return;
+        setResolvedClass(resolved);
+        setReplacementStaffLinkId("");
+        setFacultyOptions([]);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setResolvedClass(null);
+        setError(err instanceof Error ? err.message : "Could not resolve class");
+      })
+      .finally(() => {
+        if (!cancelled) setResolvingClass(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [classSelectionReady, sessionDate, resolveClass]);
+
+  useEffect(() => {
+    if (!resolvedClass || !sessionDate) {
+      setFacultyOptions([]);
+      return;
+    }
+
+    const query = facultySearch.trim();
+    if (query.length > 0 && query.length < 2) {
+      setFacultyOptions([]);
+      return;
+    }
+
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      setSearchingFaculty(true);
       const params = new URLSearchParams({
         sessionDate,
         collegeId: String(resolvedClass.collegeId),
         branchId: String(resolvedClass.branchId),
-        timingSlotId: String(resolvedClass.timingSlotId ?? timingSlotId),
+        timingSlotId: String(resolvedClass.timingSlotId),
         timetableEntryId: String(resolvedClass.timetableEntryId),
-        search: facultySearch,
       });
-      const response = await apiFetch(`/faculty-substitutions/faculty-availability?${params}`, {
+      if (query) params.set("search", query);
+
+      void apiFetch(`/faculty-substitutions/faculty-availability?${params}`, {
         cache: "no-store",
-      });
-      const body = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error((body as { message?: string }).message ?? "Could not load faculty");
-      }
-      setFacultyOptions((body as { data: FacultyAvailability[] }).data ?? []);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not load faculty");
-    } finally {
-      setBusy(false);
-    }
-  }
+      })
+        .then(async (res) => {
+          const body = await res.json().catch(() => ({}));
+          if (cancelled) return;
+          if (!res.ok) {
+            setFacultyOptions([]);
+            return;
+          }
+          setFacultyOptions((body as { data: FacultyAvailability[] }).data ?? []);
+        })
+        .catch(() => {
+          if (!cancelled) setFacultyOptions([]);
+        })
+        .finally(() => {
+          if (!cancelled) setSearchingFaculty(false);
+        });
+    }, query ? 300 : 0);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [resolvedClass, sessionDate, facultySearch]);
 
   async function submitRequest() {
     if (!resolvedClass || !replacementStaffLinkId || !reason.trim()) {
-      setError("Complete all substitution fields.");
+      setError("Select a replacement faculty and provide a reason.");
       return;
     }
     setBusy(true);
@@ -187,6 +331,7 @@ export function SubstitutionRequestForm({ onCancel }: Props) {
     try {
       const response = await apiFetch("/requests", {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           typeKey: "faculty_substitution",
           collegeId: resolvedClass.collegeId,
@@ -215,13 +360,10 @@ export function SubstitutionRequestForm({ onCancel }: Props) {
       const id = (body as { request: { id: number } }).request.id;
       const submitResponse = await apiFetch(`/requests/${id}/submit`, {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: "{}",
       });
-      if (!submitResponse.ok) {
-        router.push(`/requests/${id}`);
-        return;
-      }
-      router.push(`/requests/${id}`);
+      router.push(submitResponse.ok ? `/requests/${id}` : `/requests/${id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to submit request");
     } finally {
@@ -230,28 +372,27 @@ export function SubstitutionRequestForm({ onCancel }: Props) {
   }
 
   const selectedFaculty = facultyOptions.find((f) => f.staffLinkId === replacementStaffLinkId);
+  const canSubmit = Boolean(resolvedClass && replacementStaffLinkId && reason.trim() && !busy);
 
   return (
-    <Card className="max-w-3xl">
-      <div className="mb-4 flex flex-wrap gap-2 text-xs font-medium uppercase tracking-wide text-slate-500">
-        {["Class details", "Resolve class", "Replacement", "Reason", "Review"].map((label, index) => (
-          <span
-            key={label}
-            className={step === index + 1 ? "text-navy-900" : ""}
-          >
-            {index + 1}. {label}
-          </span>
-        ))}
-      </div>
+    <Modal
+      title="Faculty substitution request"
+      wide
+      onClose={onCancel}
+      headerActions={
+        <Button size="sm" disabled={!canSubmit} onClick={() => void submitRequest()}>
+          {busy ? "Submitting…" : "Submit request"}
+        </Button>
+      }
+    >
+      <div className="space-y-5">
+        <p className="text-sm text-slate-600">
+          {teachingStaffOnly
+            ? "Pick your class, search for a replacement faculty across the institute, and submit."
+            : "Complete all details below. Use academic filters in the header for scope."}
+        </p>
 
-      {step === 1 ? (
-        <div className="space-y-4">
-          <p className="text-sm text-slate-600">
-            Use the academic filters in the header for college, course, branch, year, semester, section, and batch.
-          </p>
-          {!scopeReady ? (
-            <p className="text-sm text-warning">Select a full academic scope before continuing.</p>
-          ) : null}
+        <div className="grid gap-4 sm:grid-cols-2">
           <label className="block text-sm">
             <span className="mb-1 block font-medium text-navy-900">Date</span>
             <input
@@ -260,178 +401,184 @@ export function SubstitutionRequestForm({ onCancel }: Props) {
               onChange={(e) => {
                 setSessionDate(e.target.value);
                 setTimingSlotId("");
-                setResolvedClass(null);
+                setSelectedMyClassIndex("");
               }}
-              className="h-11 w-full rounded-md border border-border px-3 text-sm"
+              className={inputClass}
             />
           </label>
-          <label className="block text-sm">
-            <span className="mb-1 block font-medium text-navy-900">Period</span>
-            <select
-              value={timingSlotId}
-              onChange={(e) => setTimingSlotId(e.target.value ? Number(e.target.value) : "")}
-              className="h-11 w-full rounded-md border border-border bg-white px-3 text-sm"
-              disabled={!periods.length}
-            >
-              <option value="">Select period…</option>
-              {periods.map((period) => (
-                <option key={period.timingSlotId} value={period.timingSlotId}>
-                  {period.slotLabel} ({period.startTime}–{period.endTime})
-                  {period.subjectName ? ` — ${period.subjectName}` : ""}
-                </option>
-              ))}
-            </select>
-          </label>
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <Button
-              className="w-full sm:w-auto"
-              disabled={!scopeReady || !sessionDate || !timingSlotId || busy}
-              onClick={() => void resolveClass()}
-            >
-              {busy ? "Resolving…" : "Continue"}
-            </Button>
-            <Button variant="secondary" className="w-full sm:w-auto" onClick={onCancel}>
-              Cancel
-            </Button>
-          </div>
-        </div>
-      ) : null}
 
-      {step >= 2 && resolvedClass ? (
-        <div className="space-y-4">
+          {teachingStaffOnly ? (
+            <label className="block text-sm">
+              <span className="mb-1 block font-medium text-navy-900">Your class</span>
+              <select
+                value={selectedMyClassIndex === "" ? "" : String(selectedMyClassIndex)}
+                onChange={(e) => {
+                  const index = e.target.value === "" ? "" : Number(e.target.value);
+                  setSelectedMyClassIndex(index);
+                  if (index !== "" && myClasses[index]) {
+                    setTimingSlotId(myClasses[index]!.timingSlotId);
+                  } else {
+                    setTimingSlotId("");
+                  }
+                }}
+                className={inputClass}
+                disabled={!myClasses.length}
+              >
+                <option value="">Select your class…</option>
+                {myClasses.map((item, index) => (
+                  <option key={`${item.timetableEntryId}-${item.timingSlotId}`} value={index}>
+                    {item.slotLabel} ({item.startTime}–{item.endTime}) — {item.subjectName ?? "Class"}
+                    {item.sectionName && item.sectionName !== "—"
+                      ? ` • Section ${item.sectionName}`
+                      : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : (
+            <label className="block text-sm">
+              <span className="mb-1 block font-medium text-navy-900">Period</span>
+              <select
+                value={timingSlotId}
+                onChange={(e) => setTimingSlotId(e.target.value ? Number(e.target.value) : "")}
+                className={inputClass}
+                disabled={!periods.length}
+              >
+                <option value="">Select period…</option>
+                {periods.map((period) => (
+                  <option key={period.timingSlotId} value={period.timingSlotId}>
+                    {period.slotLabel} ({period.startTime}–{period.endTime})
+                    {period.subjectName ? ` — ${period.subjectName}` : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+        </div>
+
+        {sessionDate && teachingStaffOnly && myClasses.length === 0 ? (
+          <p className="text-sm text-warning">You have no assigned classes on this date.</p>
+        ) : null}
+
+        {resolvingClass ? (
+          <p className="text-sm text-slate-500">Loading class details…</p>
+        ) : null}
+
+        {resolvedClass ? (
           <div className="rounded-lg border border-border bg-slate-50 p-4 text-sm">
-            <p className="font-semibold text-navy-900">Resolved class</p>
+            <p className="font-semibold text-navy-900">Class details</p>
             <p className="mt-2">
-              {resolvedClass.subjectName ?? "Subject"} • {resolvedClass.sectionName} •{" "}
-              {resolvedClass.slotLabel} ({resolvedClass.startTime}–{resolvedClass.endTime})
+              {resolvedClass.subjectName ?? "Subject"}
+              {resolvedClass.sectionName && resolvedClass.sectionName !== "—"
+                ? ` • Section ${resolvedClass.sectionName}`
+                : ""}{" "}
+              • {resolvedClass.slotLabel} ({resolvedClass.startTime}–{resolvedClass.endTime})
             </p>
             <p className="mt-1 text-slate-600">
               Current faculty: {resolvedClass.originalFacultyName ?? "—"}
               {resolvedClass.roomLabel ? ` • Room ${resolvedClass.roomLabel}` : ""}
             </p>
           </div>
+        ) : null}
 
-          {step === 3 ? (
-            <>
-              <label className="block text-sm">
-                <span className="mb-1 block font-medium text-navy-900">Search replacement faculty</span>
-                <input
-                  value={facultySearch}
-                  onChange={(e) => setFacultySearch(e.target.value)}
-                  className="h-10 w-full rounded-md border border-border px-3 text-sm"
-                  placeholder="Search by name or employee id"
-                />
-              </label>
-              <Button size="sm" variant="secondary" disabled={busy} onClick={() => void loadFaculty()}>
-                Search availability
-              </Button>
-              <div className="space-y-2">
-                {facultyOptions.map((faculty) => (
-                  <button
-                    key={faculty.staffLinkId}
-                    type="button"
-                    disabled={!faculty.available}
-                    onClick={() => setReplacementStaffLinkId(faculty.staffLinkId)}
-                    className={`w-full rounded-lg border px-3 py-3 text-left text-sm ${
-                      replacementStaffLinkId === faculty.staffLinkId
-                        ? "border-navy-800 bg-brand-50"
-                        : "border-border bg-white"
-                    } ${!faculty.available ? "opacity-60" : ""}`}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="font-medium text-navy-900">{faculty.name}</span>
-                      <span
-                        className={`text-xs font-medium ${
-                          faculty.available ? "text-success" : "text-critical"
-                        }`}
-                      >
-                        {faculty.available ? "Available" : "Busy"}
-                      </span>
-                    </div>
-                    {!faculty.available && faculty.busyWith ? (
-                      <p className="mt-1 text-xs text-slate-500">
-                        {faculty.busyWith.subjectName ?? "Class"} • {faculty.busyWith.sectionName ?? "—"}
-                      </p>
-                    ) : null}
-                  </button>
-                ))}
-              </div>
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <Button
-                  className="w-full sm:w-auto"
-                  disabled={!replacementStaffLinkId}
-                  onClick={() => setStep(4)}
+        {resolvedClass ? (
+          <>
+            <label className="block text-sm">
+              <span className="mb-1 block font-medium text-navy-900">
+                Search replacement faculty (institute-wide)
+              </span>
+              <input
+                value={facultySearch}
+                onChange={(e) => setFacultySearch(e.target.value)}
+                className={inputClass}
+                placeholder="Search by name, employee ID, department, or college"
+              />
+              <p className="mt-1 text-xs text-slate-500">
+                Type at least 2 characters to search. Available faculty are shown first.
+              </p>
+            </label>
+
+            {searchingFaculty ? (
+              <p className="text-sm text-slate-500">Searching faculty…</p>
+            ) : null}
+
+            <div className="max-h-56 space-y-2 overflow-y-auto">
+              {facultyOptions.length === 0 && !searchingFaculty ? (
+                <p className="text-sm text-slate-500">
+                  {facultySearch.trim().length >= 2
+                    ? "No matching faculty found."
+                    : "Start typing to search all linked faculty."}
+                </p>
+              ) : null}
+              {facultyOptions.map((faculty) => (
+                <button
+                  key={faculty.staffLinkId}
+                  type="button"
+                  disabled={!faculty.available}
+                  onClick={() => setReplacementStaffLinkId(faculty.staffLinkId)}
+                  className={`w-full rounded-lg border px-3 py-3 text-left text-sm ${
+                    replacementStaffLinkId === faculty.staffLinkId
+                      ? "border-navy-800 bg-brand-50"
+                      : "border-border bg-white"
+                  } ${!faculty.available ? "opacity-60" : ""}`}
                 >
-                  Continue
-                </Button>
-                <Button variant="secondary" className="w-full sm:w-auto" onClick={() => setStep(1)}>
-                  Back
-                </Button>
-              </div>
-            </>
-          ) : null}
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-medium text-navy-900">{faculty.name}</span>
+                    <span
+                      className={`text-xs font-medium ${
+                        faculty.available ? "text-success" : "text-critical"
+                      }`}
+                    >
+                      {faculty.available ? "Available" : "Busy"}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs text-slate-500">
+                    {[faculty.department, faculty.college, faculty.hrmsEmployeeId]
+                      .filter(Boolean)
+                      .join(" • ")}
+                  </p>
+                  {!faculty.available && faculty.busyWith ? (
+                    <p className="mt-1 text-xs text-slate-500">
+                      {faculty.busyWith.subjectName ?? "Class"} •{" "}
+                      {faculty.busyWith.sectionName ?? "—"}
+                    </p>
+                  ) : null}
+                </button>
+              ))}
+            </div>
 
-          {step === 4 ? (
-            <>
-              <label className="block text-sm">
-                <span className="mb-1 block font-medium text-navy-900">Reason (required)</span>
-                <textarea
-                  value={reason}
-                  onChange={(e) => setReason(e.target.value)}
-                  className="min-h-28 w-full rounded-md border border-border px-3 py-2 text-sm"
-                />
-              </label>
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <Button className="w-full sm:w-auto" disabled={!reason.trim()} onClick={() => setStep(5)}>
-                  Review
-                </Button>
-                <Button variant="secondary" className="w-full sm:w-auto" onClick={() => setStep(3)}>
-                  Back
-                </Button>
-              </div>
-            </>
-          ) : null}
+            <label className="block text-sm">
+              <span className="mb-1 block font-medium text-navy-900">Reason (required)</span>
+              <textarea
+                value={reason}
+                onChange={(e) => setReason(e.target.value)}
+                className="min-h-24 w-full rounded-md border border-border px-3 py-2 text-sm outline-none focus:border-navy-800"
+                placeholder="Why do you need a substitution?"
+              />
+            </label>
 
-          {step === 5 ? (
-            <>
-              <div className="rounded-lg border border-border p-4 text-sm text-slate-700">
-                <p>
-                  <strong>Date:</strong> {sessionDate}
-                </p>
-                <p>
-                  <strong>Class:</strong> {resolvedClass.sectionName} • {resolvedClass.subjectName}
-                </p>
-                <p>
-                  <strong>Period:</strong> {resolvedClass.slotLabel} ({resolvedClass.startTime}–
-                  {resolvedClass.endTime})
-                </p>
-                <p>
-                  <strong>Original faculty:</strong> {resolvedClass.originalFacultyName}
-                </p>
-                <p>
-                  <strong>Replacement faculty:</strong> {selectedFaculty?.name ?? "—"}
-                </p>
-                <p>
-                  <strong>Reason:</strong> {reason}
-                </p>
-              </div>
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <Button className="w-full sm:w-auto" disabled={busy} onClick={() => void submitRequest()}>
-                  {busy ? "Submitting…" : "Submit request"}
-                </Button>
-                <Button variant="secondary" className="w-full sm:w-auto" onClick={() => setStep(4)}>
-                  Back
-                </Button>
-              </div>
-            </>
-          ) : null}
+            {selectedFaculty ? (
+              <p className="text-sm text-slate-600">
+                Replacement: <strong>{selectedFaculty.name}</strong>
+              </p>
+            ) : null}
+          </>
+        ) : null}
+
+        {error ? <p className="text-sm text-critical">{error}</p> : null}
+        {!teachingStaffOnly && !masters ? (
+          <p className="text-xs text-slate-500">Loading academic masters…</p>
+        ) : null}
+
+        <div className="flex flex-col gap-2 border-t border-border pt-4 sm:flex-row">
+          <Button className="w-full sm:w-auto" disabled={!canSubmit} onClick={() => void submitRequest()}>
+            {busy ? "Submitting…" : "Submit request"}
+          </Button>
+          <Button variant="secondary" className="w-full sm:w-auto" onClick={onCancel}>
+            Cancel
+          </Button>
         </div>
-      ) : null}
-
-      {error ? <p className="mt-3 text-sm text-critical">{error}</p> : null}
-      {masters ? null : (
-        <p className="mt-2 text-xs text-slate-500">Loading academic masters…</p>
-      )}
-    </Card>
+      </div>
+    </Modal>
   );
 }

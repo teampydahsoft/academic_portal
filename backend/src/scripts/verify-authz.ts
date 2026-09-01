@@ -142,7 +142,17 @@ async function main() {
 
   const facultyPerms = permissionsForRoleKeys(["faculty"]);
   assert(!facultyPerms.includes("timetable.publish"), "Faculty publish blocked in matrix");
-  console.log("2. Faculty cannot publish (matrix)");
+  assert(!facultyPerms.includes("students.view"), "Faculty must not view all students register");
+  assert(!facultyPerms.includes("timetable.view"), "Faculty must use my_timetable.view only");
+  assert(!facultyPerms.includes("workload.view"), "Faculty must not view staff workload");
+  assert(!facultyPerms.includes("catalog.view"), "Faculty must not view curriculum catalog");
+  assert(!facultyPerms.includes("faculty.view"), "Faculty must not view faculty directory");
+  assert(!facultyPerms.includes("pending_exceptions.view"), "Faculty must not view operations queue");
+  assert(!facultyPerms.includes("reports.view"), "Faculty must not view reports hub");
+  assert(!facultyPerms.includes("alerts.view"), "Faculty must not view alerts hub");
+  assert(!facultyPerms.includes("attendance_analytics.view"), "Faculty must not view attendance analytics");
+  assert(facultyPerms.includes("my_timetable.view"), "Faculty must have my_timetable.view");
+  console.log("2. Faculty teaching-staff matrix OK");
 
   const scoped = buildScopeFromAssignments([
     { roleKey: "hod", label: "HOD", collegeId: 1, branchId: 57 },

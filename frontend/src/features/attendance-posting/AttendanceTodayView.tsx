@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/Button";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { useAcademicContext } from "@/components/layout/AcademicProvider";
 import { apiFetch } from "@/lib/api";
+import { isTeachingStaffOnly } from "@/lib/teaching-scope";
+import { useAuth } from "@/components/auth/AuthProvider";
 
 export type AttendanceSessionCard = {
   id: number;
@@ -45,6 +47,8 @@ function todayIso() {
 
 export function AttendanceTodayView() {
   const { filters } = useAcademicContext();
+  const { authorization } = useAuth();
+  const teachingStaffOnly = isTeachingStaffOnly(authorization);
   const [date, setDate] = useState(todayIso);
   const [payload, setPayload] = useState<ListResponse | null>(null);
   const [loading, setLoading] = useState(true);
@@ -103,7 +107,11 @@ export function AttendanceTodayView() {
     <div>
       <PageHeader
         title="Attendance Posting"
-        description="Class sessions from published Academic Portal timetables. Holidays come from Student Database. Roster comes from Student Database."
+        description={
+          teachingStaffOnly
+            ? "Your assigned class sessions for the selected date. Only subjects linked to your published timetable are shown."
+            : "Class sessions from published Academic Portal timetables. Holidays come from Student Database. Roster comes from Student Database."
+        }
         actions={
           <label className="flex items-center gap-2 text-sm">
             <span className="text-slate-500">Date</span>
@@ -147,8 +155,9 @@ export function AttendanceTodayView() {
         <Card>
           <p className="text-sm text-navy-900">No class sessions for this date and filter set.</p>
           <p className="mt-1 text-sm text-slate-500">
-            Publish a timetable for the selected college / course / branch / batch / semester,
-            and confirm semester dates exist in Settings. Declared holidays are skipped.
+            {teachingStaffOnly
+              ? "You have no assigned classes for this date. If you expected a session, confirm your published timetable or contact your HOD."
+              : "Publish a timetable for the selected college / course / branch / batch / semester, and confirm semester dates exist in Settings. Declared holidays are skipped."}
           </p>
         </Card>
       ) : null}

@@ -32,11 +32,11 @@ export type WorkloadFilters = {
   scopeOnly?: boolean;
 };
 
-type Thresholds = {
-  minPeriodsPerWeek: number;
-  maxPeriodsPerWeek: number;
-  maxPeriodsPerDay: number;
-};
+import {
+  evaluateWorkloadStatus,
+  loadWorkloadThresholds,
+  type WorkloadThresholds,
+} from "./workload-thresholds.service.js";
 
 type AssignmentRow = RowDataPacket & {
   staff_link_id: number;
@@ -70,12 +70,6 @@ type AssignmentRow = RowDataPacket & {
   slot_type: string | null;
 };
 
-const DEFAULT_THRESHOLDS: Thresholds = {
-  minPeriodsPerWeek: 8,
-  maxPeriodsPerWeek: 20,
-  maxPeriodsPerDay: 5,
-};
-
 function toMinutes(time: string | null | undefined) {
   if (!time) return null;
   const normalized = String(time).slice(0, 5);
@@ -91,45 +85,8 @@ export function slotDurationMinutes(start: string | null | undefined, end: strin
   return endMin - startMin;
 }
 
-function loadStatus(periods: number, thresholds: Thresholds) {
-  if (periods > thresholds.maxPeriodsPerWeek) return "Overloaded";
-  if (periods < thresholds.minPeriodsPerWeek) return "Underloaded";
-  return "Balanced";
-}
-
 function roundHours(minutes: number) {
   return Math.round((minutes / 60) * 10) / 10;
-}
-
-async function loadThresholds(collegeId?: number): Promise<Thresholds> {
-  try {
-    const rows = await queryAcademic<
-      (RowDataPacket & {
-        min_periods_per_week: number;
-        max_periods_per_week: number;
-        max_periods_per_day: number;
-      })[]
-    >(
-      `
-      SELECT min_periods_per_week, max_periods_per_week, max_periods_per_day
-      FROM ap_workload_thresholds
-      WHERE is_active = 1
-        AND (college_id IS NULL OR college_id = ?)
-      ORDER BY (college_id IS NULL) ASC, id DESC
-      LIMIT 1
-      `,
-      [collegeId ?? null],
-    );
-    const row = rows[0];
-    if (!row) return DEFAULT_THRESHOLDS;
-    return {
-      minPeriodsPerWeek: Number(row.min_periods_per_week) || DEFAULT_THRESHOLDS.minPeriodsPerWeek,
-      maxPeriodsPerWeek: Number(row.max_periods_per_week) || DEFAULT_THRESHOLDS.maxPeriodsPerWeek,
-      maxPeriodsPerDay: Number(row.max_periods_per_day) || DEFAULT_THRESHOLDS.maxPeriodsPerDay,
-    };
-  } catch {
-    return DEFAULT_THRESHOLDS;
-  }
 }
 
 function assignmentWhere(filters: WorkloadFilters) {
@@ -373,7 +330,7 @@ function resolveDepartment(
 
 function aggregateFaculty(
   rows: AssignmentRow[],
-  thresholds: Thresholds,
+  thresholds: WorkloadThresholds,
   hrmsMap: Map<string, HrmsStaffMeta>,
 ) {
   const byStaff = new Map<number, AssignmentRow[]>();
@@ -417,10 +374,13 @@ function aggregateFaculty(
       byDay.set(row.day_of_week, (byDay.get(row.day_of_week) ?? 0) + 1);
     }
     const maxPeriodsInADay = Math.max(0, ...byDay.values());
-    let status = loadStatus(periodsPerWeek, thresholds);
-    if (maxPeriodsInADay > thresholds.maxPeriodsPerDay && status !== "Overloaded") {
-      status = "Overloaded";
-    }
+    const hoursPerWeek = roundHours(minutesPerWeek);
+    const status = evaluateWorkloadStatus(
+      periodsPerWeek,
+      hoursPerWeek,
+      maxPeriodsInADay,
+      thresholds,
+    );
 
     return {
       id: String(staffLinkId),
@@ -628,7 +588,7 @@ export async function getWorkloadSummary(filters: WorkloadFilters = {}) {
 
   const [rows, thresholds] = await Promise.all([
     loadPublishedAssignments(queryFilters),
-    loadThresholds(filters.collegeId),
+    loadWorkloadThresholds(filters.collegeId),
   ]);
   const hrmsMap = await loadHrmsStaffMetaMap(rows.map((row) => row.hrms_employee_id));
   const allFaculty = aggregateFaculty(rows, thresholds, hrmsMap).sort(
@@ -687,7 +647,7 @@ export async function getFacultyWorkloadDetail(
 
   const [rows, thresholds] = await Promise.all([
     loadPublishedAssignments(detailFilters, staffLinkId),
-    loadThresholds(filters.collegeId),
+    loadWorkloadThresholds(filters.collegeId),
   ]);
 
   const hrmsMap = await loadHrmsStaffMetaMap(rows.map((row) => row.hrms_employee_id));

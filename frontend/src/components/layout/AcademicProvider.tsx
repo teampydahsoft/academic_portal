@@ -9,6 +9,8 @@ import {
   useState,
 } from "react";
 import { apiFetch } from "@/lib/api";
+import { useAuth } from "@/components/auth/AuthProvider";
+import { scopeAllowsBranch, scopeAllowsCollege } from "@/lib/teaching-scope";
 
 export type AcademicMasters = {
   academicYears: { id: number; label: string; isActive: boolean }[];
@@ -120,6 +122,7 @@ function readStoredFilters(): AcademicFilters | null {
 }
 
 export function AcademicProvider({ children }: { children: React.ReactNode }) {
+  const { authorization } = useAuth();
   const [masters, setMasters] = useState<AcademicMasters | null>(null);
   const [loading, setLoading] = useState(true);
   const [filters, setFiltersState] = useState<AcademicFilters>(defaultFilters);
@@ -142,21 +145,58 @@ export function AcademicProvider({ children }: { children: React.ReactNode }) {
         if (!response.ok) throw new Error("Failed to load masters");
         const data = (await response.json()) as AcademicMasters;
         if (cancelled) return;
+
+        const scopedColleges = (data.colleges ?? []).filter((college) =>
+          scopeAllowsCollege(authorization, college.id),
+        );
+        const allowedCollegeIds = new Set(scopedColleges.map((college) => college.id));
+        const scopedCourses = (data.courses ?? []).filter((course) =>
+          allowedCollegeIds.has(course.collegeId),
+        );
+        const allowedCourseIds = new Set(scopedCourses.map((course) => course.id));
+        const scopedBranches = (data.branches ?? []).filter(
+          (branch) =>
+            allowedCourseIds.has(branch.courseId) &&
+            scopeAllowsBranch(authorization, branch.id),
+        );
+        const allowedBranchIds = new Set(scopedBranches.map((branch) => branch.id));
+        const scopedBatches = (data.batches ?? []).filter((row) =>
+          allowedBranchIds.has(row.branchId),
+        );
+        const scopedSections = (data.sections ?? []).filter((section) =>
+          allowedBranchIds.has(section.branchId),
+        );
+
         setMasters({
           ...data,
-          batches: data.batches ?? [],
+          colleges: scopedColleges,
+          courses: scopedCourses,
+          branches: scopedBranches,
+          batches: scopedBatches,
+          sections: scopedSections,
           yearOptions: data.yearOptions ?? [1, 2, 3, 4],
           semesterOptions: data.semesterOptions ?? [1, 2],
         });
-        setFiltersState((prev) => ({
-          ...prev,
-          academicYear:
+        setFiltersState((prev) => {
+          const academicYear =
             prev.academicYear ||
             data.academicYears.find((y) => y.label === "2026-2027")?.label ||
             data.academicYears.find((y) => y.isActive)?.label ||
             data.academicYears[0]?.label ||
-            "",
-        }));
+            "";
+
+          let collegeId = prev.collegeId;
+          if (!authorization?.scope?.isGlobal && scopedColleges.length === 1) {
+            collegeId = scopedColleges[0]!.id;
+          } else if (
+            collegeId !== "all" &&
+            !scopedColleges.some((college) => college.id === collegeId)
+          ) {
+            collegeId = scopedColleges.length === 1 ? scopedColleges[0]!.id : "all";
+          }
+
+          return { ...prev, academicYear, collegeId };
+        });
       } catch {
         if (!cancelled) setMasters(null);
       } finally {
@@ -168,7 +208,7 @@ export function AcademicProvider({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [authorization]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;

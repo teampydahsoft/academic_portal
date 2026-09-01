@@ -6,7 +6,7 @@ export const permissionsRouter = Router();
 
 permissionsRouter.get(
   "/",
-  requirePermission("user_management.view", "user_management.manage_users"),
+  requirePermission("roles.view", "roles.manage"),
   async (_req, res, next) => {
     try {
       res.json({ data: await listPermissionsCatalog() });

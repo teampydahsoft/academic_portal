@@ -13,6 +13,7 @@ import {
 import { NAV_GROUPS, filterNavGroups } from "@/lib/navigation";
 import { cn } from "@/lib/cn";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { isTeachingStaffOnly } from "@/lib/teaching-scope";
 import { Button } from "@/components/ui/Button";
 import { apiFetch } from "@/lib/api";
 
@@ -29,9 +30,11 @@ export function Sidebar({ open, collapsed, onClose, onToggleCollapsed }: Props) 
     useAuth();
   const [profileOpen, setProfileOpen] = useState(false);
 
+  const teachingStaffOnly = isTeachingStaffOnly(authorization);
+
   const groups = useMemo(
-    () => filterNavGroups(NAV_GROUPS, hasAnyPermission),
-    [hasAnyPermission],
+    () => filterNavGroups(NAV_GROUPS, hasAnyPermission, { teachingStaffOnly }),
+    [hasAnyPermission, teachingStaffOnly],
   );
 
   const roleLabel = useMemo(() => {

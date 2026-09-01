@@ -24,6 +24,24 @@ const PERMISSION_META: Record<
     displayName: "View Dashboard",
     description: "Access Command Center / dashboard summary",
   },
+  "pending_exceptions.view": {
+    module: "pending_exceptions",
+    action: "view",
+    displayName: "View Pending & Exceptions",
+    description: "View pending items and operational exceptions",
+  },
+  "reports.view": {
+    module: "reports",
+    action: "view",
+    displayName: "View Reports",
+    description: "Access operational reports hub",
+  },
+  "alerts.view": {
+    module: "alerts",
+    action: "view",
+    displayName: "View Alerts",
+    description: "Access operational alerts",
+  },
   "students.view": {
     module: "students",
     action: "view",
@@ -42,6 +60,12 @@ const PERMISSION_META: Record<
     displayName: "View Timetable",
     description: "View timetables and timing templates",
   },
+  "my_timetable.view": {
+    module: "my_timetable",
+    action: "view",
+    displayName: "View My Timetable",
+    description: "View personal teaching timetable",
+  },
   "timetable.edit": {
     module: "timetable",
     action: "edit",
@@ -58,7 +82,13 @@ const PERMISSION_META: Record<
     module: "attendance",
     action: "view",
     displayName: "View Attendance",
-    description: "View attendance sessions and analytics",
+    description: "View attendance sessions for posting",
+  },
+  "attendance_analytics.view": {
+    module: "attendance_analytics",
+    action: "view",
+    displayName: "View Attendance Analytics",
+    description: "View attendance analytics and trends",
   },
   "attendance.post": {
     module: "attendance",
@@ -112,13 +142,25 @@ const PERMISSION_META: Record<
     module: "user_management",
     action: "view",
     displayName: "View Users",
-    description: "View Academic Portal users and roles",
+    description: "View Academic Portal users and assigned roles",
   },
   "user_management.manage_users": {
     module: "user_management",
     action: "manage_users",
-    displayName: "Manage Users & Roles",
-    description: "Link users, assign roles, manage role permissions",
+    displayName: "Manage Users",
+    description: "Link users, assign roles and college/branch scope, activate/deactivate users",
+  },
+  "roles.view": {
+    module: "roles",
+    action: "view",
+    displayName: "View Roles & Permissions",
+    description: "View role definitions and permission matrix",
+  },
+  "roles.manage": {
+    module: "roles",
+    action: "manage",
+    displayName: "Manage Roles & Permissions",
+    description: "Create, edit, and deactivate roles; assign permissions",
   },
   "catalog.view": {
     module: "catalog",

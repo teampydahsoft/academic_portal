@@ -11,7 +11,12 @@ export const commandCenterRouter = Router();
 
 commandCenterRouter.get(
   "/summary",
-  requirePermission("dashboard.view"),
+  requirePermission(
+    "dashboard.view",
+    "pending_exceptions.view",
+    "reports.view",
+    "alerts.view",
+  ),
   async (req: AuthedRequest, res, next) => {
     try {
       const scoped = scopedFilters(req, {

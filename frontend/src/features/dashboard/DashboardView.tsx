@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/Button";
 import { useAcademicContext } from "@/components/layout/AcademicProvider";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { apiFetch } from "@/lib/api";
+import { isTeachingStaffOnly } from "@/lib/teaching-scope";
 import {
   BarChart,
   Bar,
@@ -43,6 +44,7 @@ export type CommandCenterSummary = {
 import type { AttendanceSessionCard } from "@/features/attendance-posting/AttendanceTodayView";
 import type { WorkloadSummary } from "@/features/workload/StaffWorkloadView";
 import { RequestDashboardCard } from "@/features/requests/RequestDashboardCard";
+import { getTodayDayCode } from "@/features/my-timetable/utils";
 
 function todayIso() {
   const now = new Date();
@@ -74,10 +76,13 @@ type AttendanceAnalytics = {
 export function DashboardView() {
   const { user, authorization, hasAnyPermission, hasPermission } = useAuth();
   const { filters } = useAcademicContext();
+  const teachingStaffOnly = isTeachingStaffOnly(authorization);
 
-  const canDashboard = hasAnyPermission("dashboard.view");
+  const canDashboard = hasAnyPermission("dashboard.view") && !teachingStaffOnly;
   const canAttendance = hasAnyPermission("attendance.view", "attendance.post");
-  const canWorkload = hasAnyPermission("workload.view");
+  const canAttendanceAnalytics =
+    hasAnyPermission("attendance_analytics.view") && !teachingStaffOnly;
+  const canWorkload = hasAnyPermission("workload.view") && !teachingStaffOnly;
   const canExams = hasAnyPermission("examinations.view");
   const canStudents = hasAnyPermission("students.view");
   const canFaculty = hasAnyPermission("faculty.view");
@@ -88,6 +93,17 @@ export function DashboardView() {
 
   const [summary, setSummary] = useState<CommandCenterSummary | null>(null);
   const [attendance, setAttendance] = useState<AttendanceAnalytics | null>(null);
+  const [myTimetableSummary, setMyTimetableSummary] = useState<{
+    periodsThisWeek: number;
+    subjects: number;
+    sections: number;
+    classesToday: number;
+  } | null>(null);
+  const [myClassesToday, setMyClassesToday] = useState<{
+    scheduled: number;
+    posted: number;
+    pending: number;
+  } | null>(null);
   const [pendingItems, setPendingItems] = useState<PendingItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -144,7 +160,7 @@ export function DashboardView() {
           );
         }
 
-        if (canAttendance) {
+        if (canAttendanceAnalytics) {
           reqs.push(
             apiFetch(`/attendance/analytics${qs ? `?${qs}` : ""}`)
               .then((res) => (res.ok ? res.json() : null))
@@ -154,17 +170,30 @@ export function DashboardView() {
               })
               .catch(() => {})
           );
+        }
 
+        if (canAttendance) {
           const attParams = new URLSearchParams(scopeParams);
           attParams.set("date", todayIso());
           reqs.push(
             apiFetch(`/attendance/sessions?${attParams}`)
               .then((res) => (res.ok ? res.json() : null))
-              .then((data: { data?: AttendanceSessionCard[] } | null) => {
+              .then((data: { data?: AttendanceSessionCard[]; scheduled?: number; posted?: number } | null) => {
                 if (cancelled || !data?.data) return;
                 const sessions = data.data.filter(
                   (s) => !s.posted && s.sessionStatus !== "cancelled"
                 );
+                if (teachingStaffOnly) {
+                  const scheduled = data.scheduled ?? data.data.length;
+                  const posted =
+                    data.posted ??
+                    data.data.filter((s) => s.posted).length;
+                  setMyClassesToday({
+                    scheduled,
+                    posted,
+                    pending: Math.max(0, scheduled - posted),
+                  });
+                }
                 for (const session of sessions) {
                   const subject = session.subjectCode || session.subjectName || "Class session";
                   nextPending.push({
@@ -179,6 +208,37 @@ export function DashboardView() {
                   });
                 }
               })
+              .catch(() => {})
+          );
+        }
+
+        if (teachingStaffOnly && hasAnyPermission("my_timetable.view")) {
+          reqs.push(
+            apiFetch(`/my-timetable${qs ? `?${qs}` : ""}`)
+              .then((res) => (res.ok ? res.json() : null))
+              .then(
+                (data: {
+                  summary?: {
+                    periodsThisWeek: number;
+                    subjects: number;
+                    sections: number;
+                  } | null;
+                  weekDays?: Array<{ classCount: number; dayOfWeek: string }>;
+                } | null) => {
+                  if (cancelled || !data?.summary) return;
+                  const todayCode = getTodayDayCode();
+                  const classesToday =
+                    todayCode === "SUN"
+                      ? 0
+                      : data.weekDays?.find((day) => day.dayOfWeek === todayCode)?.classCount ?? 0;
+                  setMyTimetableSummary({
+                    periodsThisWeek: data.summary.periodsThisWeek,
+                    subjects: data.summary.subjects,
+                    sections: data.summary.sections,
+                    classesToday,
+                  });
+                },
+              )
               .catch(() => {})
           );
         }
@@ -228,7 +288,7 @@ export function DashboardView() {
     return () => {
       cancelled = true;
     };
-  }, [canDashboard, canAttendance, canWorkload, canTimetable, scopeParams]);
+  }, [canDashboard, canAttendance, canAttendanceAnalytics, canWorkload, canTimetable, scopeParams, teachingStaffOnly, hasAnyPermission]);
 
   const greeting = useMemo(() => {
     const hour = new Date().getHours();
@@ -254,7 +314,7 @@ export function DashboardView() {
     return "Here's what's happening in your organization today.";
   }, [authorization]);
 
-  if (loading && !summary && !attendance) {
+  if (loading && !summary && !attendance && !myTimetableSummary) {
     return (
       <div className="flex h-64 items-center justify-center text-sm text-slate-500">
         Loading dashboard...
@@ -277,6 +337,60 @@ export function DashboardView() {
 
       {/* SECTION C — KPI SUMMARY CARDS */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {teachingStaffOnly ? (
+          <>
+            {hasAnyPermission("my_timetable.view") ? (
+              <>
+                <StatCard
+                  label="Classes Today"
+                  value={myTimetableSummary?.classesToday ?? myClassesToday?.scheduled ?? "—"}
+                  hint="From your published timetable"
+                  tone="info"
+                />
+                <StatCard
+                  label="Periods This Week"
+                  value={myTimetableSummary?.periodsThisWeek ?? "—"}
+                  hint="Assigned teaching load"
+                  tone="info"
+                />
+                <StatCard
+                  label="Subjects"
+                  value={myTimetableSummary?.subjects ?? "—"}
+                  hint="Assigned subjects"
+                  tone="info"
+                />
+                <StatCard
+                  label="Sections"
+                  value={myTimetableSummary?.sections ?? "—"}
+                  hint="Assigned sections"
+                  tone="info"
+                />
+              </>
+            ) : null}
+            {canAttendance ? (
+              <>
+                <StatCard
+                  label="Today's Sessions"
+                  value={myClassesToday?.scheduled ?? "—"}
+                  hint="Your assigned classes"
+                />
+                <StatCard
+                  label="Posted"
+                  value={myClassesToday?.posted ?? "—"}
+                  tone="success"
+                  hint="Attendance taken"
+                />
+                <StatCard
+                  label="Pending"
+                  value={myClassesToday?.pending ?? "—"}
+                  tone="warning"
+                  hint="Awaiting submission"
+                />
+              </>
+            ) : null}
+          </>
+        ) : (
+          <>
         {canStudents ? (
           <StatCard
             label="Active Students"
@@ -313,6 +427,8 @@ export function DashboardView() {
             tone="info"
           />
         ) : null}
+          </>
+        )}
       </div>
 
       <div className="grid gap-6 xl:grid-cols-3">
@@ -320,7 +436,7 @@ export function DashboardView() {
         <div className="xl:col-span-2 space-y-6">
           
           {/* SECTION D — ATTENDANCE HEALTH */}
-          {canAttendance ? (
+          {canAttendance && !teachingStaffOnly ? (
             <Card>
               <div className="mb-4 flex items-center justify-between">
                 <h2 className="text-base font-semibold text-navy-900">Attendance Health</h2>
@@ -372,9 +488,39 @@ export function DashboardView() {
             </Card>
           ) : null}
 
+          {canAttendance && teachingStaffOnly ? (
+            <Card>
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="text-base font-semibold text-navy-900">My Attendance Today</h2>
+                <Link href="/attendance-posting">
+                  <Button variant="secondary" size="sm">Post Attendance</Button>
+                </Link>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-3">
+                <StatCard
+                  label="Today's Sessions"
+                  value={myClassesToday?.scheduled ?? 0}
+                  hint="Your assigned classes"
+                />
+                <StatCard
+                  label="Posted"
+                  value={myClassesToday?.posted ?? 0}
+                  tone="success"
+                  hint="Attendance taken"
+                />
+                <StatCard
+                  label="Pending"
+                  value={myClassesToday?.pending ?? 0}
+                  tone="warning"
+                  hint="Awaiting submission"
+                />
+              </div>
+            </Card>
+          ) : null}
+
           {/* SECTION E & F — ACADEMIC OPERATIONS & EXAMS */}
           <div className="grid gap-6 sm:grid-cols-2">
-            {canTimetable ? (
+            {canTimetable && !teachingStaffOnly ? (
               <Card>
                 <div className="mb-4 flex items-center justify-between">
                   <h2 className="text-base font-semibold text-navy-900">Academic Operations</h2>
@@ -399,7 +545,32 @@ export function DashboardView() {
               </Card>
             ) : null}
 
-            {canExams ? (
+            {hasAnyPermission("my_timetable.view") && teachingStaffOnly ? (
+              <Card>
+                <div className="mb-4 flex items-center justify-between">
+                  <h2 className="text-base font-semibold text-navy-900">My Timetable</h2>
+                  <Link href="/my-timetable">
+                    <Button variant="secondary" size="sm">View Timetable</Button>
+                  </Link>
+                </div>
+                <div className="space-y-4">
+                  <div>
+                    <p className="text-sm text-slate-500 mb-1">Periods This Week</p>
+                    <p className="text-2xl font-semibold text-navy-900">
+                      {myTimetableSummary?.periodsThisWeek ?? "—"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-slate-500 mb-1">Classes Today</p>
+                    <p className="text-2xl font-semibold text-navy-900">
+                      {myTimetableSummary?.classesToday ?? "—"}
+                    </p>
+                  </div>
+                </div>
+              </Card>
+            ) : null}
+
+            {canExams && !teachingStaffOnly ? (
               <Card>
                 <div className="mb-4 flex items-center justify-between">
                   <h2 className="text-base font-semibold text-navy-900">Examinations</h2>
@@ -481,7 +652,7 @@ export function DashboardView() {
           </Card>
 
           {/* SECTION G & H — STUDENT & STAFF RISKS */}
-          {(canStudents || canWorkload) && (
+          {(canStudents || canWorkload) && !teachingStaffOnly && (
             <Card>
               <h2 className="mb-4 text-base font-semibold text-navy-900">Health & Risk Indicators</h2>
               <div className="space-y-4">
@@ -533,13 +704,20 @@ export function DashboardView() {
                   </Button>
                 </Link>
               )}
-              {canTimetable && (
+              {hasAnyPermission("my_timetable.view") && teachingStaffOnly ? (
+                <Link href="/my-timetable">
+                  <Button variant="secondary" className="w-full justify-start text-sm bg-slate-50 hover:bg-slate-100 border-0">
+                    My Timetable
+                  </Button>
+                </Link>
+              ) : null}
+              {canTimetable && !teachingStaffOnly ? (
                 <Link href="/timetables">
                   <Button variant="secondary" className="w-full justify-start text-sm bg-slate-50 hover:bg-slate-100 border-0">
                     Manage Timetable
                   </Button>
                 </Link>
-              )}
+              ) : null}
               {canFaculty && (
                 <Link href="/faculty-departments">
                   <Button variant="secondary" className="w-full justify-start text-sm bg-slate-50 hover:bg-slate-100 border-0">
