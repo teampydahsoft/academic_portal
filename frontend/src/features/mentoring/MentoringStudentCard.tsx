@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import { StatusBadge } from "@/components/ui/StatusBadge";
+import { StudentAvatar } from "@/features/students/StudentAvatar";
 import type { MentoringStudentRow } from "./types";
 import { formatComplaintStatus } from "./utils";
 
@@ -14,11 +15,14 @@ export function MentoringStudentCard({ row }: Props) {
   return (
     <article className="rounded-lg border border-border bg-card p-4 shadow-sm">
       <div className="mb-2 flex items-start justify-between gap-2">
-        <div>
-          <h3 className="font-semibold text-navy-900">{row.name}</h3>
-          <p className="text-xs text-slate-500">
-            {row.rollNo || row.admissionNo} · {row.branch} · {row.section}
-          </p>
+        <div className="flex items-center gap-3">
+          <StudentAvatar name={row.name} photo={null} studentId={row.id} hasPhoto={true} size="md" />
+          <div>
+            <h3 className="font-semibold text-navy-900">{row.name}</h3>
+            <p className="text-xs text-slate-500">
+              {row.rollNo || row.admissionNo} · {row.branch} · {row.section}
+            </p>
+          </div>
         </div>
         <StatusBadge status={row.risk} />
       </div>

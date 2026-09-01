@@ -624,6 +624,343 @@ export async function listMentorAssignments(
   return results;
 }
 
+export type MentorMenteeRow = {
+  assignmentId: number;
+  studentDbId: number;
+  facultyStaffLinkId: number;
+  mentorName: string;
+  academicYearLabel: string;
+  createdAt: string;
+  studentName: string;
+  rollNo: string | null;
+  admissionNo: string;
+  branch: string;
+  section: string;
+  batch: string;
+  year: number | null;
+  semester: number | null;
+  risk: "High" | "Medium" | "Low" | null;
+};
+
+async function loadStudentBriefs(studentIds: number[]) {
+  const map = new Map<
+    number,
+    {
+      name: string;
+      rollNo: string | null;
+      admissionNo: string;
+      branch: string;
+      section: string;
+      batch: string;
+      year: number | null;
+      semester: number | null;
+    }
+  >();
+  if (studentIds.length === 0) return map;
+
+  const placeholders = studentIds.map(() => "?").join(", ");
+  const rows = await queryStudent<
+    (RowDataPacket & {
+      id: number;
+      student_name: string | null;
+      pin_no: string | null;
+      admission_number: string | null;
+      branch: string | null;
+      section: string | null;
+      section_name: string | null;
+      batch: string | null;
+      current_year: number | null;
+      current_semester: number | null;
+    })[]
+  >(
+    `
+    SELECT
+      s.id,
+      s.student_name,
+      s.pin_no,
+      s.admission_number,
+      s.branch,
+      s.section,
+      ss.section_name,
+      s.batch,
+      s.current_year,
+      s.current_semester
+    FROM students s
+    LEFT JOIN student_sections ss ON ss.student_id = s.id
+    WHERE s.id IN (${placeholders})
+    `,
+    studentIds,
+  );
+
+  for (const row of rows) {
+    map.set(Number(row.id), {
+      name: String(row.student_name ?? "Unknown").trim() || "Unknown",
+      rollNo: row.pin_no ? String(row.pin_no).trim() : null,
+      admissionNo: String(row.admission_number ?? "").trim(),
+      branch: String(row.branch ?? "—").trim() || "—",
+      section: String(row.section_name ?? row.section ?? "—").trim() || "—",
+      batch: String(row.batch ?? "").trim(),
+      year: row.current_year == null ? null : Number(row.current_year),
+      semester: row.current_semester == null ? null : Number(row.current_semester),
+    });
+  }
+  return map;
+}
+
+export async function listMentorMenteesDetailed(
+  authz: AuthzContext,
+  facultyStaffLinkId: number,
+) {
+  if (!hasPermission(authz, "mentoring.view")) fail(403, "Forbidden");
+
+  const staffRows = await queryAcademic<(RowDataPacket & { id: number })[]>(
+    `SELECT id FROM ap_staff_link WHERE id = ? LIMIT 1`,
+    [facultyStaffLinkId],
+  );
+  if (!staffRows[0]) fail(404, "Faculty staff record not found");
+
+  const assignments = await listMentorAssignments(authz, { facultyStaffLinkId });
+  const studentIds = assignments.map((a) => a.studentDbId);
+  const briefs = await loadStudentBriefs(studentIds);
+
+  return assignments.map((assignment) => {
+    const student = briefs.get(assignment.studentDbId);
+    return {
+      assignmentId: assignment.assignmentId,
+      studentDbId: assignment.studentDbId,
+      facultyStaffLinkId: assignment.facultyStaffLinkId,
+      mentorName: assignment.mentorName,
+      academicYearLabel: assignment.academicYearLabel,
+      createdAt: assignment.createdAt,
+      studentName: student?.name ?? "Unknown",
+      rollNo: student?.rollNo ?? null,
+      admissionNo: student?.admissionNo ?? "",
+      branch: student?.branch ?? "—",
+      section: student?.section ?? "—",
+      batch: student?.batch ?? "",
+      year: student?.year ?? null,
+      semester: student?.semester ?? null,
+      risk: null as "High" | "Medium" | "Low" | null,
+    } satisfies MentorMenteeRow;
+  });
+}
+
+export type MentorSectionScope = {
+  collegeId: number;
+  courseId: number;
+  branchId: number;
+  batch: string;
+  year: number | null;
+  semester: number | null;
+  section: string;
+  academicYearLabel?: string;
+};
+
+function isMeaningfulSection(section: string | null | undefined): boolean {
+  const value = (section ?? "").trim();
+  if (!value || value === "-" || value === "—" || value.toLowerCase() === "all") return false;
+  return true;
+}
+
+async function resolveStudentIdsForSectionScope(scope: MentorSectionScope): Promise<number[]> {
+  const ids: number[] = [];
+  let offset = 0;
+  const limit = 100;
+
+  while (true) {
+    const result = await listStudents({
+      collegeId: scope.collegeId,
+      ...(scope.courseId > 0 ? { courseId: scope.courseId } : {}),
+      branchId: scope.branchId,
+      batch: scope.batch,
+      year: scope.year ?? undefined,
+      semester: scope.semester ?? undefined,
+      ...(isMeaningfulSection(scope.section) ? { section: scope.section } : {}),
+      limit,
+      offset,
+    });
+    ids.push(...result.data.map((row) => Number(row.id)));
+    if (offset + result.data.length >= result.total) break;
+    offset += limit;
+  }
+
+  return ids;
+}
+
+function parseMentorSectionScope(raw: unknown): MentorSectionScope | null {
+  if (!raw || typeof raw !== "object") return null;
+  const item = raw as Record<string, unknown>;
+  const collegeId = Number(item.collegeId);
+  const courseId = Number(item.courseId);
+  const branchId = Number(item.branchId);
+  const batch = typeof item.batch === "string" ? item.batch.trim() : "";
+  const sectionRaw = typeof item.section === "string" ? item.section.trim() : "";
+  if (!Number.isFinite(collegeId) || !Number.isFinite(branchId) || collegeId <= 0 || branchId <= 0) {
+    return null;
+  }
+  if (!batch) return null;
+
+  const section = isMeaningfulSection(sectionRaw) ? sectionRaw : "";
+  const parsedCourseId = Number.isFinite(courseId) && courseId > 0 ? courseId : 0;
+
+  const yearRaw = item.year;
+  const semesterRaw = item.semester;
+  const year =
+    yearRaw == null || yearRaw === ""
+      ? null
+      : Number.isFinite(Number(yearRaw))
+        ? Number(yearRaw)
+        : null;
+  const semester =
+    semesterRaw == null || semesterRaw === ""
+      ? null
+      : Number.isFinite(Number(semesterRaw))
+        ? Number(semesterRaw)
+        : null;
+
+  return {
+    collegeId,
+    courseId: parsedCourseId,
+    branchId,
+    batch,
+    year,
+    semester,
+    section,
+    academicYearLabel:
+      typeof item.academicYearLabel === "string" ? item.academicYearLabel.trim() : undefined,
+  };
+}
+
+export function parseMentorSectionScopes(raw: unknown): MentorSectionScope[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map(parseMentorSectionScope).filter((scope): scope is MentorSectionScope => scope != null);
+}
+
+export async function assignMentorsBySections(
+  authz: AuthzContext,
+  input: {
+    facultyStaffLinkId: number;
+    sections: MentorSectionScope[];
+    academicYearLabel?: string;
+    notes?: string;
+    ipAddress?: string | null;
+  },
+) {
+  if (!hasPermission(authz, "mentoring.assign")) fail(403, "Forbidden");
+  if (input.sections.length === 0) fail(400, "At least one section is required");
+
+  const studentIds = new Set<number>();
+  const sectionCounts: Array<{ section: string; studentCount: number }> = [];
+
+  for (const section of input.sections) {
+    const ids = await resolveStudentIdsForSectionScope(section);
+    sectionCounts.push({ section: section.section, studentCount: ids.length });
+    for (const id of ids) studentIds.add(id);
+  }
+
+  if (studentIds.size === 0) fail(400, "No students found in the selected sections");
+
+  const academicYearLabel =
+    input.academicYearLabel ??
+    input.sections.find((section) => section.academicYearLabel)?.academicYearLabel;
+
+  const result = await assignMentorsBulk(authz, {
+    facultyStaffLinkId: input.facultyStaffLinkId,
+    studentDbIds: [...studentIds],
+    academicYearLabel,
+    notes: input.notes,
+    ipAddress: input.ipAddress,
+  });
+
+  return {
+    ...result,
+    sectionCount: input.sections.length,
+    studentCount: studentIds.size,
+    sections: sectionCounts,
+  };
+}
+
+export async function deactivateMentorSections(
+  authz: AuthzContext,
+  input: {
+    facultyStaffLinkId: number;
+    sections: MentorSectionScope[];
+    ipAddress?: string | null;
+  },
+) {
+  if (!hasPermission(authz, "mentoring.assign")) fail(403, "Forbidden");
+  if (input.sections.length === 0) fail(400, "At least one section is required");
+
+  const studentIds = new Set<number>();
+  for (const section of input.sections) {
+    const ids = await resolveStudentIdsForSectionScope(section);
+    for (const id of ids) studentIds.add(id);
+  }
+
+  if (studentIds.size === 0) fail(400, "No students found in the selected sections");
+
+  const assignments = await listMentorAssignments(authz, {
+    facultyStaffLinkId: input.facultyStaffLinkId,
+  });
+  const toDeactivate = assignments.filter((assignment) => studentIds.has(assignment.studentDbId));
+
+  for (const assignment of toDeactivate) {
+    await deactivateMentorAssignment(authz, assignment.assignmentId, input.ipAddress);
+  }
+
+  return {
+    deactivatedCount: toDeactivate.length,
+    sectionCount: input.sections.length,
+  };
+}
+
+export async function assignMentorsBulk(
+  authz: AuthzContext,
+  input: {
+    facultyStaffLinkId: number;
+    studentDbIds: number[];
+    academicYearLabel?: string;
+    notes?: string;
+    ipAddress?: string | null;
+  },
+) {
+  if (!hasPermission(authz, "mentoring.assign")) fail(403, "Forbidden");
+
+  const uniqueIds = [...new Set(input.studentDbIds.filter((id) => Number.isFinite(id) && id > 0))];
+  if (uniqueIds.length === 0) fail(400, "At least one student is required");
+
+  const assigned: number[] = [];
+  const skipped: Array<{ studentDbId: number; reason: string }> = [];
+
+  for (const studentDbId of uniqueIds) {
+    try {
+      await assignMentor(authz, {
+        studentDbId,
+        facultyStaffLinkId: input.facultyStaffLinkId,
+        academicYearLabel: input.academicYearLabel,
+        notes: input.notes,
+        ipAddress: input.ipAddress,
+      });
+      assigned.push(studentDbId);
+    } catch (err) {
+      const status = Number((err as { status?: number }).status);
+      const message = err instanceof Error ? err.message : "Assignment failed";
+      if (status === 409) {
+        skipped.push({ studentDbId, reason: message });
+      } else {
+        throw err;
+      }
+    }
+  }
+
+  return {
+    assignedCount: assigned.length,
+    skippedCount: skipped.length,
+    assignedStudentDbIds: assigned,
+    skipped,
+  };
+}
+
 async function recordCaseEvent(
   riskCaseId: number,
   eventType: string,

@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { DataTable } from "@/components/ui/DataTable";
 import { apiFetch } from "@/lib/api";
+import { StudentAvatar } from "@/features/students/StudentAvatar";
 import { InterventionDialog } from "./InterventionDialog";
 import { InterventionTimeline } from "./InterventionTimeline";
 import { MentorAssignDialog } from "./MentorAssignDialog";
@@ -145,24 +146,31 @@ export function MentoringCaseDetailView({ caseId }: Props) {
 
   return (
     <div>
-      <PageHeader
-        title={student.name}
-        description={[student.college, student.course, student.branch].filter(Boolean).join(" · ")}
-        actions={
-          <div className="flex flex-wrap gap-2">
-            <Link href="/mentoring-risks">
-              <Button variant="ghost" size="sm">
-                Back
-              </Button>
-            </Link>
-            <Link href={`/students/${student.id}`}>
-              <Button variant="secondary" size="sm">
-                Student profile
-              </Button>
-            </Link>
+      <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+        <div className="flex items-center gap-4">
+          <StudentAvatar name={student.name} photo={null} studentId={student.id} hasPhoto={true} size="lg" />
+          <div>
+            <h1 className="text-[28px] font-semibold leading-tight text-navy-900">
+              {student.name}
+            </h1>
+            <p className="mt-1 max-w-3xl text-sm text-slate-500">
+              {[student.college, student.course, student.branch].filter(Boolean).join(" · ")}
+            </p>
           </div>
-        }
-      />
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link href="/mentoring-risks">
+            <Button variant="ghost" size="sm">
+              Back
+            </Button>
+          </Link>
+          <Link href={`/students/${student.id}`}>
+            <Button variant="secondary" size="sm">
+              Student profile
+            </Button>
+          </Link>
+        </div>
+      </div>
 
       {actionError ? (
         <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-critical">

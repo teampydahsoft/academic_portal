@@ -10,6 +10,14 @@ import { useAcademicContext } from "@/components/layout/AcademicProvider";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { apiFetch } from "@/lib/api";
 import { TimingEditorDrawer } from "@/features/timetables/TimingEditorDrawer";
+import {
+  classPeriodCellClass,
+  emptyPeriodCellClass,
+  isNonClassTimingSlot,
+  specialPeriodCellClass,
+  timingSlotCellClass,
+  timingSlotDisplayLabel,
+} from "@/features/timetables/timing-slot-utils";
 
 type SlotCell = {
   slotId: number;
@@ -109,7 +117,29 @@ type ReviewPayload = {
   facultyClashes: string[];
   roomClashes: string[];
   warnings: string[];
+  unchanged?: boolean;
+  unchangedFromPublishedPlanId?: number | null;
+  unchangedFromPublishedVersion?: number | null;
+  message?: string | null;
 };
+
+function assignmentSignature(assignments: LocalAssignment[]): string {
+  return JSON.stringify(
+    [...assignments]
+      .map((item) => ({
+        dayOfWeek: item.dayOfWeek,
+        timingSlotId: item.timingSlotId,
+        subjectId: item.subjectId,
+        hrmsEmployeeId: item.hrmsEmployeeId,
+        roomLabel: item.roomLabel,
+        customLabel: item.customLabel,
+        entryType: item.entryType,
+      }))
+      .sort((a, b) =>
+        `${a.dayOfWeek}:${a.timingSlotId}`.localeCompare(`${b.dayOfWeek}:${b.timingSlotId}`),
+      ),
+  );
+}
 
 const DAY_LABEL_TO_CODE: Record<string, string> = {
   Monday: "MON",
@@ -128,6 +158,77 @@ function mapEmsTypeToEntryType(type: string | null | undefined): "theory" | "lab
   return "other";
 }
 
+function subjectCellDisplay(assignment: Pick<LocalAssignment, "subjectCode" | "subjectName">) {
+  const code = assignment.subjectCode.trim();
+  const name = assignment.subjectName.trim();
+  if (name && code) {
+    return { title: name, subtitle: code };
+  }
+  return { title: name || code || "Subject", subtitle: null };
+}
+
+function resolveFacultyForSubject(
+  assignments: LocalAssignment[],
+  subjectId: number,
+  entryType: "theory" | "lab" | "other",
+  exclude?: { dayOfWeek: string; timingSlotId: number },
+) {
+  const candidates = assignments.filter((assignment) => {
+    if (!assignment.subjectId || !assignment.hrmsEmployeeId) return false;
+    if (assignment.subjectId !== subjectId) return false;
+    if (
+      exclude &&
+      assignment.dayOfWeek === exclude.dayOfWeek &&
+      assignment.timingSlotId === exclude.timingSlotId
+    ) {
+      return false;
+    }
+    return true;
+  });
+  const typed = candidates.find((assignment) => assignment.entryType === entryType);
+  return (typed ?? candidates[0])?.hrmsEmployeeId ?? "";
+}
+
+type PlannerFaculty = PlannerResponse["faculty"][number];
+
+function isMeaningfulFacultyField(value: string | null | undefined) {
+  const trimmed = (value ?? "").trim();
+  return trimmed.length > 0 && trimmed !== "—";
+}
+
+function FacultyPickerMeta({
+  faculty,
+  active = false,
+}: {
+  faculty: PlannerFaculty;
+  active?: boolean;
+}) {
+  const muted = active ? "text-white/75" : "text-slate-500";
+  const label = active ? "text-white/60" : "text-slate-400";
+  const emphasis = active ? "text-white/90" : "text-slate-700";
+
+  return (
+    <div className="mt-1 space-y-0.5">
+      <p className={cn("text-xs", muted)}>
+        Emp {faculty.hrmsEmployeeId}
+        {isMeaningfulFacultyField(faculty.designation) ? ` · ${faculty.designation}` : ""}
+      </p>
+      {isMeaningfulFacultyField(faculty.department) ? (
+        <p className={cn("text-xs leading-snug", emphasis)}>
+          <span className={cn("font-medium", label)}>Dept: </span>
+          <span className="break-words">{faculty.department}</span>
+        </p>
+      ) : null}
+      {isMeaningfulFacultyField(faculty.division) ? (
+        <p className={cn("text-xs leading-snug", muted)}>
+          <span className={cn("font-medium", label)}>Division: </span>
+          <span className="break-words">{faculty.division}</span>
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 export function TimetablePlannerView() {
   const { filters, masters } = useAcademicContext();
   const { hasPermission, hasAnyPermission } = useAuth();
@@ -143,6 +244,8 @@ export function TimetablePlannerView() {
     slotId: number;
   } | null>(null);
   const [review, setReview] = useState<ReviewPayload | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
+  const [baselineSignature, setBaselineSignature] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [timingsOpen, setTimingsOpen] = useState(false);
   const [form, setForm] = useState({
@@ -237,7 +340,9 @@ export function TimetablePlannerView() {
         }
       }
       setAssignments(loaded);
+      setBaselineSignature(assignmentSignature(loaded));
       setReview(null);
+      setInfo(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load planner");
       setPlanner(null);
@@ -249,6 +354,12 @@ export function TimetablePlannerView() {
   useEffect(() => {
     void loadPlanner();
   }, [loadPlanner]);
+
+  const currentSignature = useMemo(() => assignmentSignature(assignments), [assignments]);
+  const hasLocalChanges =
+    baselineSignature != null && currentSignature !== baselineSignature;
+  const isPublished = planner?.context.status === "published";
+  const publishBlocked = isPublished && !hasLocalChanges;
 
   const assignmentMap = useMemo(() => {
     const map = new Map<string, LocalAssignment>();
@@ -263,16 +374,25 @@ export function TimetablePlannerView() {
     const dayCode = DAY_LABEL_TO_CODE[day] ?? day;
     const existing = assignmentMap.get(`${dayCode}:${cell.slotId}`);
     const isSpecial = Boolean(existing?.customLabel) && !existing?.subjectId;
+    const entryType = existing?.entryType ?? "theory";
+    const subjectId = existing?.subjectId ? String(existing.subjectId) : "";
+    const inferredFaculty =
+      !existing?.hrmsEmployeeId && subjectId
+        ? resolveFacultyForSubject(assignments, Number(subjectId), entryType, {
+            dayOfWeek: dayCode,
+            timingSlotId: cell.slotId,
+          })
+        : "";
     setSelected({ day, slotId: cell.slotId });
     setFacultySearch("");
     setFacultyOpen(false);
     setForm({
       mode: isSpecial ? "special" : "subject",
-      subjectId: existing?.subjectId ? String(existing.subjectId) : "",
+      subjectId,
       customLabel: existing?.customLabel ?? "",
-      hrmsEmployeeId: existing?.hrmsEmployeeId ?? "",
+      hrmsEmployeeId: existing?.hrmsEmployeeId ?? inferredFaculty,
       roomLabel: existing?.roomLabel ?? "",
-      entryType: existing?.entryType ?? "theory",
+      entryType,
     });
   };
 
@@ -390,6 +510,7 @@ export function TimetablePlannerView() {
     if (!body) return;
     setBusy(true);
     setError(null);
+    setInfo(null);
     try {
       const response = await apiFetch(`/timetables/draft`, {
         method: "POST",
@@ -398,6 +519,11 @@ export function TimetablePlannerView() {
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.message || "Save draft failed");
+      if (data.unchanged) {
+        setInfo(
+          `Timetable is already published (plan #${data.planId}, version ${data.versionNo ?? "—"}) with no changes.`,
+        );
+      }
       await loadPlanner();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Save draft failed");
@@ -435,8 +561,15 @@ export function TimetablePlannerView() {
   };
 
   const publish = async () => {
+    if (publishBlocked) {
+      setInfo(
+        `This timetable is already published (plan #${planner?.context.planId ?? "—"}, version ${planner?.context.versionNo ?? "—"}). Edit a period before publishing again.`,
+      );
+      return;
+    }
     setBusy(true);
     setError(null);
+    setInfo(null);
     try {
       await saveDraft();
       const plannerRes = await apiFetch(`/timetables/planner${query}`, {
@@ -491,6 +624,7 @@ export function TimetablePlannerView() {
         f.name.toLowerCase().includes(q) ||
         f.hrmsEmployeeId.toLowerCase().includes(q) ||
         f.department.toLowerCase().includes(q) ||
+        f.division.toLowerCase().includes(q) ||
         f.designation.toLowerCase().includes(q),
     );
   }, [planner?.faculty, facultySearch]);
@@ -506,6 +640,20 @@ export function TimetablePlannerView() {
       planner.faculty.find((f) => f.hrmsEmployeeId === form.hrmsEmployeeId) ?? null
     );
   }, [form.hrmsEmployeeId, planner]);
+
+  const facultyAutoMatched = useMemo(() => {
+    if (!selected || form.mode !== "subject" || !form.subjectId || !form.hrmsEmployeeId) {
+      return false;
+    }
+    const dayCode = DAY_LABEL_TO_CODE[selected.day] ?? selected.day;
+    const inferred = resolveFacultyForSubject(
+      assignments,
+      Number(form.subjectId),
+      form.entryType,
+      { dayOfWeek: dayCode, timingSlotId: selected.slotId },
+    );
+    return inferred === form.hrmsEmployeeId;
+  }, [assignments, form.entryType, form.hrmsEmployeeId, form.mode, form.subjectId, selected]);
 
   const fieldClass =
     "h-10 w-full rounded-lg border border-border bg-white px-3 text-sm text-navy-900 outline-none transition-colors focus:border-navy-700 focus:ring-2 focus:ring-navy-900/10";
@@ -539,7 +687,10 @@ export function TimetablePlannerView() {
               </Button>
             ) : null}
             {canPublish ? (
-              <Button disabled={!planner?.ready || busy} onClick={() => void publish()}>
+              <Button
+                disabled={!planner?.ready || busy || publishBlocked}
+                onClick={() => void publish()}
+              >
                 Publish
               </Button>
             ) : null}
@@ -562,6 +713,23 @@ export function TimetablePlannerView() {
       {error ? (
         <Card className="mb-4">
           <p className="text-sm text-critical">{error}</p>
+        </Card>
+      ) : null}
+
+      {info ? (
+        <Card className="mb-4 border-brand-200 bg-brand-50/40">
+          <p className="text-sm text-navy-900">{info}</p>
+        </Card>
+      ) : null}
+
+      {publishBlocked ? (
+        <Card className="mb-4 border-emerald-200 bg-emerald-50">
+          <p className="text-sm font-medium text-navy-900">Timetable already published</p>
+          <p className="mt-1 text-sm text-slate-700">
+            Plan #{planner?.context.planId ?? "—"}
+            {planner?.context.versionNo ? ` · version ${planner.context.versionNo}` : ""} is live.
+            Make changes to a period before publishing again.
+          </p>
         </Card>
       ) : null}
 
@@ -619,18 +787,31 @@ export function TimetablePlannerView() {
           </Card>
 
           <div className="overflow-x-auto rounded-lg border border-border bg-card">
-            <table className="min-w-[980px] w-full border-collapse text-sm">
+            <table className="w-full min-w-[980px] table-fixed border-collapse text-sm">
+              <colgroup>
+                <col style={{ width: "5.5rem" }} />
+                {headerSlots.map((slot) => (
+                  <col key={slot.id} />
+                ))}
+              </colgroup>
               <thead>
                 <tr className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-                  <th className="border-b border-border px-3 py-2 text-left">Day</th>
-                  {headerSlots.map((slot) => (
-                    <th key={slot.id} className="border-b border-border px-3 py-2 text-left">
-                      <div>{slot.label}</div>
-                      <div className="font-normal normal-case text-slate-400">
-                        {slot.startTime}–{slot.endTime}
-                      </div>
-                    </th>
-                  ))}
+                  <th className="border-b border-border px-2 py-2 text-left">Day</th>
+                  {headerSlots.map((slot) => {
+                    const nonClass = isNonClassTimingSlot(slot);
+                    return (
+                      <th key={slot.id} className="border-b border-border px-2 py-2 text-center">
+                        <div className="truncate">
+                          {nonClass ? timingSlotDisplayLabel(slot) : slot.label}
+                        </div>
+                        <div className="truncate font-normal normal-case text-[10px] text-slate-400">
+                          {nonClass ? slot.label : null}
+                          {nonClass ? " · " : null}
+                          {slot.startTime}–{slot.endTime}
+                        </div>
+                      </th>
+                    );
+                  })}
                 </tr>
               </thead>
               <tbody>
@@ -639,7 +820,7 @@ export function TimetablePlannerView() {
                   const dayCode = DAY_LABEL_TO_CODE[day] ?? day;
                   return (
                     <tr key={day}>
-                      <td className="border-b border-border px-3 py-2 font-medium text-navy-900">
+                      <td className="border-b border-border px-2 py-2 font-medium text-navy-900">
                         {day}
                       </td>
                       {headerSlots.map((headerSlot) => {
@@ -659,17 +840,23 @@ export function TimetablePlannerView() {
                         }
                         const cell = planner.grid[day]?.[slot.id];
                         const local = assignmentMap.get(`${dayCode}:${slot.id}`);
-                        const isBreak =
-                          slot.slotType === "BREAK" ||
-                          slot.slotType === "LUNCH" ||
-                          slot.slotType === "ACTIVITY" ||
-                          slot.slotType === "OTHER";
+                        const subject =
+                          local && !local.customLabel ? subjectCellDisplay(local) : null;
+                        const isBreak = isNonClassTimingSlot(slot);
 
-                        if (isBreak || !slot.isAssignable) {
+                        if (isBreak) {
                           return (
                             <td key={`${day}-${slot.id}`} className="border-b border-border p-1.5">
-                              <div className="flex h-24 items-center justify-center rounded-md bg-slate-100 text-xs font-medium text-slate-500">
-                                {slot.label}
+                              <div
+                                className={cn(
+                                  "flex h-24 flex-col items-center justify-center rounded-md text-xs font-semibold",
+                                  timingSlotCellClass(slot),
+                                )}
+                              >
+                                <span>{timingSlotDisplayLabel(slot)}</span>
+                                <span className="mt-0.5 text-[10px] font-normal opacity-80">
+                                  {slot.startTime}–{slot.endTime}
+                                </span>
                               </div>
                             </td>
                           );
@@ -696,21 +883,30 @@ export function TimetablePlannerView() {
                                   ? "border-navy-800 ring-1 ring-navy-800"
                                   : "border-border hover:border-slate-300",
                                 local?.customLabel
-                                  ? "bg-amber-50/80"
+                                  ? specialPeriodCellClass()
                                   : local
-                                    ? "bg-blue-50/70"
-                                    : "bg-slate-50",
+                                    ? classPeriodCellClass()
+                                    : emptyPeriodCellClass(),
                               )}
                             >
                               {local ? (
                                 <>
-                                  <p className="font-semibold text-navy-900">
-                                    {local.customLabel
-                                      ? local.customLabel
-                                      : local.subjectCode || local.subjectName}
-                                  </p>
                                   {local.customLabel ? (
-                                    <p className="text-xs text-slate-500">Free / Special</p>
+                                    <p className="font-semibold text-navy-900">{local.customLabel}</p>
+                                  ) : subject ? (
+                                    <>
+                                      <p className="line-clamp-2 font-semibold leading-snug text-navy-900">
+                                        {subject.title}
+                                      </p>
+                                      {subject.subtitle ? (
+                                        <p className="text-xs font-mono text-slate-500">
+                                          {subject.subtitle}
+                                        </p>
+                                      ) : null}
+                                    </>
+                                  ) : null}
+                                  {local.customLabel ? (
+                                    <p className="text-xs text-violet-700">Free / Special</p>
                                   ) : null}
                                   {local.facultyName ? (
                                     <p className="text-xs text-slate-600">{local.facultyName}</p>
@@ -863,13 +1059,35 @@ export function TimetablePlannerView() {
                             const subject = planner.subjects.find(
                               (s) => String(s.id) === subjectId,
                             );
+                            const entryType = subject
+                              ? mapEmsTypeToEntryType(subject.type)
+                              : form.entryType;
+                            const dayCode = selected
+                              ? DAY_LABEL_TO_CODE[selected.day] ?? selected.day
+                              : "";
+                            const inferredFaculty = subjectId
+                              ? resolveFacultyForSubject(
+                                  assignments,
+                                  Number(subjectId),
+                                  entryType,
+                                  selected
+                                    ? {
+                                        dayOfWeek: dayCode,
+                                        timingSlotId: selected.slotId,
+                                      }
+                                    : undefined,
+                                )
+                              : "";
                             setForm((f) => ({
                               ...f,
                               subjectId,
-                              entryType: subject
-                                ? mapEmsTypeToEntryType(subject.type)
-                                : f.entryType,
+                              entryType,
+                              hrmsEmployeeId: inferredFaculty,
                             }));
+                            if (inferredFaculty) {
+                              setFacultySearch("");
+                              setFacultyOpen(false);
+                            }
                           }}
                         >
                           <option value="">Select subject</option>
@@ -939,26 +1157,15 @@ export function TimetablePlannerView() {
                     </span>
 
                     {selectedFaculty && !facultyOpen ? (
-                      <div className="flex items-center justify-between gap-2 rounded-lg border border-navy-200 bg-navy-50/60 px-3 py-2.5">
-                        <div className="min-w-0">
-                          <p className="truncate font-medium text-navy-900">
-                            {selectedFaculty.name}
-                          </p>
-                          <p className="truncate text-xs text-slate-500">
-                            Emp {selectedFaculty.hrmsEmployeeId}
-                            {selectedFaculty.employeeGroup &&
-                            selectedFaculty.employeeGroup !== "—"
-                              ? ` · ${selectedFaculty.employeeGroup}`
-                              : ""}
-                            {selectedFaculty.division &&
-                            selectedFaculty.division !== "—"
-                              ? ` · ${selectedFaculty.division}`
-                              : ""}
-                            {selectedFaculty.department &&
-                            selectedFaculty.department !== "—"
-                              ? ` · ${selectedFaculty.department}`
-                              : ""}
-                          </p>
+                      <div className="flex items-start justify-between gap-2 rounded-lg border border-navy-200 bg-navy-50/60 px-3 py-2.5">
+                        <div className="min-w-0 flex-1">
+                          <p className="font-medium text-navy-900">{selectedFaculty.name}</p>
+                          <FacultyPickerMeta faculty={selectedFaculty} />
+                          {facultyAutoMatched ? (
+                            <p className="mt-1 text-xs text-emerald-700">
+                              Auto-filled from another period for this subject.
+                            </p>
+                          ) : null}
                         </div>
                         <button
                           type="button"
@@ -990,8 +1197,7 @@ export function TimetablePlannerView() {
 
                         {facultySearch.trim().length < 2 ? (
                           <p className="border-t border-border px-3 py-3 text-xs text-slate-500">
-                            Search by name, emp no, division, or department — results show in 2 columns
-                            (no scrolling).
+                            Search by name, emp no, department, division, or designation.
                             {form.mode === "special"
                               ? " Faculty is optional for free/special periods."
                               : ""}
@@ -1001,8 +1207,8 @@ export function TimetablePlannerView() {
                             No matching staff
                           </p>
                         ) : (
-                          <div className="border-t border-border p-2">
-                            <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+                          <div className="max-h-72 overflow-y-auto border-t border-border p-2">
+                            <div className="grid grid-cols-1 gap-1.5">
                               {visibleFaculty.map((faculty) => {
                                 const active =
                                   form.hrmsEmployeeId === faculty.hrmsEmployeeId;
@@ -1011,7 +1217,7 @@ export function TimetablePlannerView() {
                                     key={faculty.hrmsEmployeeId}
                                     type="button"
                                     className={cn(
-                                      "flex flex-col items-start rounded-md border px-2.5 py-2 text-left transition-colors",
+                                      "flex w-full flex-col items-start rounded-md border px-3 py-2.5 text-left transition-colors",
                                       active
                                         ? "border-navy-900 bg-navy-900 text-white"
                                         : "border-border/80 hover:border-slate-300 hover:bg-slate-50",
@@ -1027,32 +1233,13 @@ export function TimetablePlannerView() {
                                   >
                                     <span
                                       className={cn(
-                                        "line-clamp-1 text-sm font-medium",
+                                        "text-sm font-medium leading-snug",
                                         active ? "text-white" : "text-navy-900",
                                       )}
                                     >
                                       {faculty.name}
                                     </span>
-                                    <span
-                                      className={cn(
-                                        "line-clamp-1 text-xs",
-                                        active ? "text-white/70" : "text-slate-500",
-                                      )}
-                                    >
-                                      Emp {faculty.hrmsEmployeeId}
-                                      {faculty.employeeGroup &&
-                                      faculty.employeeGroup !== "—"
-                                        ? ` · ${faculty.employeeGroup}`
-                                        : ""}
-                                      {faculty.division &&
-                                      faculty.division !== "—"
-                                        ? ` · ${faculty.division}`
-                                        : ""}
-                                      {faculty.department &&
-                                      faculty.department !== "—"
-                                        ? ` · ${faculty.department}`
-                                        : ""}
-                                    </span>
+                                    <FacultyPickerMeta faculty={faculty} active={active} />
                                   </button>
                                 );
                               })}
@@ -1092,6 +1279,12 @@ export function TimetablePlannerView() {
           {review ? (
             <Card className="mt-4">
               <h3 className="mb-3 text-base font-semibold text-navy-900">Timetable Review</h3>
+              {review.unchanged ? (
+                <div className="mb-4 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-navy-900">
+                  {review.message ??
+                    "No changes since the last published timetable. Publishing is not required."}
+                </div>
+              ) : null}
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 text-sm">
                 <div>
                   <p className="font-medium text-navy-900">Assigned Classes</p>

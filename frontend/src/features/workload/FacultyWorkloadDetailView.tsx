@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -8,76 +8,44 @@ import { Card } from "@/components/ui/Card";
 import { StatCard } from "@/components/ui/StatCard";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Button } from "@/components/ui/Button";
-import { useAcademicContext } from "@/components/layout/AcademicProvider";
 import { apiFetch } from "@/lib/api";
-
-type Assignment = {
-  entryId: number;
-  dayLabel: string;
-  slotLabel: string | null;
-  startTime: string | null;
-  endTime: string | null;
-  minutes: number;
-  entryType: string;
-  subjectCode: string | null;
-  subjectName: string | null;
-  section: string | null;
-  batch: string;
-  roomLabel: string | null;
-};
-
-type DayGroup = {
-  dayOfWeek: string;
-  dayLabel: string;
-  periods: number;
-  minutes: number;
-  hours: number;
-  assignments: Assignment[];
-};
+import {
+  WorkloadTimetableGrid,
+  type FacultyTimetable,
+} from "@/features/workload/WorkloadTimetableGrid";
 
 type FacultyDetail = {
   id: string;
   name: string;
   code: string;
   department: string;
+  division?: string;
+  designation?: string;
   status: string;
   periodsPerWeek: number;
   hoursPerWeek: number;
-  minutesPerWeek: number;
   subjects: number;
   sections: number;
   theory: number;
   lab: number;
-  maxPeriodsInADay: number;
-  assignments: Assignment[];
-  byDay: DayGroup[];
-  source?: string;
-  thresholds?: {
-    minPeriodsPerWeek: number;
-    maxPeriodsPerWeek: number;
-    maxPeriodsPerDay: number;
+  hoursByDay?: {
+    MON: number;
+    TUE: number;
+    WED: number;
+    THUR: number;
+    FRI: number;
+    SAT: number;
+    SUN: number;
   };
+  timetable: FacultyTimetable | null;
+  source?: string;
 };
 
 export function FacultyWorkloadDetailView() {
   const params = useParams<{ facultyId: string }>();
-  const { filters } = useAcademicContext();
   const [faculty, setFaculty] = useState<FacultyDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  const query = useMemo(() => {
-    const search = new URLSearchParams();
-    if (filters.collegeId !== "all") search.set("collegeId", String(filters.collegeId));
-    if (filters.courseId !== "all") search.set("courseId", String(filters.courseId));
-    if (filters.branchId !== "all") search.set("branchId", String(filters.branchId));
-    if (filters.batch !== "all") search.set("batch", String(filters.batch));
-    if (filters.year !== "all") search.set("year", String(filters.year));
-    if (filters.semester !== "all") search.set("semester", String(filters.semester));
-    if (filters.section !== "all") search.set("section", String(filters.section));
-    if (filters.academicYear) search.set("academicYear", filters.academicYear);
-    return search.toString();
-  }, [filters]);
 
   useEffect(() => {
     let cancelled = false;
@@ -85,9 +53,9 @@ export function FacultyWorkloadDetailView() {
       setLoading(true);
       setError(null);
       try {
-        const response = await apiFetch(`/workload/${encodeURIComponent(params.facultyId)}${query ? `?${query}` : ""}`,
-          { cache: "no-store" },
-        );
+        const response = await apiFetch(`/workload/${encodeURIComponent(params.facultyId)}`, {
+          cache: "no-store",
+        });
         const body = await response.json().catch(() => ({}));
         if (!response.ok) {
           throw new Error(
@@ -110,7 +78,7 @@ export function FacultyWorkloadDetailView() {
     return () => {
       cancelled = true;
     };
-  }, [params.facultyId, query]);
+  }, [params.facultyId]);
 
   if (loading) {
     return <p className="text-sm text-slate-500">Loading faculty workload…</p>;
@@ -136,7 +104,14 @@ export function FacultyWorkloadDetailView() {
     <div>
       <PageHeader
         title={faculty.name}
-        description={`HRMS / staff code: ${faculty.code}`}
+        description={[
+          `HRMS / staff code: ${faculty.code}`,
+          faculty.department && faculty.department !== "—" ? faculty.department : null,
+          faculty.designation && faculty.designation !== "—" ? faculty.designation : null,
+          faculty.division && faculty.division !== "—" ? faculty.division : null,
+        ]
+          .filter(Boolean)
+          .join(" · ")}
         actions={
           <Link href="/staff-workload">
             <Button size="sm" variant="secondary">
@@ -153,52 +128,22 @@ export function FacultyWorkloadDetailView() {
       </div>
       <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Department" value={faculty.department} />
+        <StatCard label="Branches taught" value={faculty.sections} />
         <StatCard label="Subjects" value={faculty.subjects} />
-        <StatCard label="Sections" value={faculty.sections} />
         <StatCard label="Theory / Lab periods" value={`${faculty.theory} / ${faculty.lab}`} />
       </div>
 
-      <div className="mb-4 grid gap-3 xl:grid-cols-2">
-        {faculty.byDay.map((day) => (
-          <Card key={day.dayOfWeek}>
-            <div className="mb-3 flex items-center justify-between">
-              <h3 className="font-semibold text-navy-900">{day.dayLabel}</h3>
-              <p className="text-xs text-slate-500">
-                {day.periods} periods • {day.hours} hrs
-              </p>
-            </div>
-            <ul className="space-y-2 text-sm">
-              {day.assignments.map((item) => (
-                <li
-                  key={item.entryId}
-                  className="rounded-md border border-border px-3 py-2"
-                >
-                  <p className="font-medium text-navy-900">
-                    {item.startTime}–{item.endTime} {item.slotLabel ? `• ${item.slotLabel}` : ""}
-                  </p>
-                  <p className="text-slate-600">
-                    {item.subjectCode ?? "—"} {item.subjectName ?? ""}
-                  </p>
-                  <p className="text-xs text-slate-500">
-                    {item.entryType} • Section {item.section ?? "—"} • {item.minutes} min
-                    {item.roomLabel ? ` • ${item.roomLabel}` : ""}
-                  </p>
-                </li>
-              ))}
-            </ul>
-          </Card>
-        ))}
-      </div>
-
-      {faculty.assignments.length === 0 ? (
-        <Card>
+      {!faculty.timetable ? (
+        <Card className="mb-4">
           <p className="text-sm text-slate-600">
-            No published CLASS assignments for this faculty in the current filters.
+            No published CLASS assignments for this faculty.
           </p>
         </Card>
-      ) : null}
+      ) : (
+        <WorkloadTimetableGrid timetable={faculty.timetable} />
+      )}
 
-      <Card>
+      <Card className="mt-4">
         <h3 className="mb-2 text-base font-semibold text-navy-900">Source</h3>
         <p className="text-sm text-slate-600">{faculty.source}</p>
       </Card>

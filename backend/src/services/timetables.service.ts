@@ -646,6 +646,176 @@ async function loadEntries(planId: number) {
   return rows;
 }
 
+type TimingSlotRow = Awaited<ReturnType<typeof listTimingSlots>>[number];
+
+type PlanScope = {
+  academic_year_label: string;
+  college_id: number;
+  course_id: number;
+  branch_id: number;
+  batch: string;
+  semester_number: number | null;
+  section_name: string | null;
+};
+
+function planScopeFromRow(plan: PlanRow): PlanScope {
+  return {
+    academic_year_label: plan.academic_year_label,
+    college_id: plan.college_id,
+    course_id: plan.course_id,
+    branch_id: plan.branch_id,
+    batch: plan.batch,
+    semester_number: plan.semester_number,
+    section_name: plan.section_name,
+  };
+}
+
+function planScopeFromDraftInput(input: {
+  academicYear: string;
+  collegeId: number;
+  courseId: number;
+  branchId: number;
+  batch: string;
+  semester: number;
+  section?: string | null;
+}): PlanScope {
+  return {
+    academic_year_label: input.academicYear,
+    college_id: input.collegeId,
+    course_id: input.courseId,
+    branch_id: input.branchId,
+    batch: input.batch,
+    semester_number: input.semester,
+    section_name: input.section ?? null,
+  };
+}
+
+async function findPublishedPlanForScope(scope: PlanScope): Promise<PlanRow | null> {
+  const rows = await queryAcademic<PlanRow[]>(
+    `
+    SELECT *
+    FROM ap_timetable_plans
+    WHERE academic_year_label = ?
+      AND college_id = ?
+      AND course_id = ?
+      AND branch_id = ?
+      AND batch = ?
+      AND semester_number = ?
+      AND ((? IS NULL AND (section_name IS NULL OR section_name = '')) OR section_name = ?)
+      AND status = 'published'
+    ORDER BY version_no DESC, id DESC
+    LIMIT 1
+    `,
+    [
+      scope.academic_year_label,
+      scope.college_id,
+      scope.course_id,
+      scope.branch_id,
+      scope.batch,
+      scope.semester_number,
+      scope.section_name,
+      scope.section_name,
+    ],
+  );
+  return rows[0] ?? null;
+}
+
+function slotTimingKey(
+  slots: TimingSlotRow[],
+  slotId: number,
+  dayOfWeek: DayCode,
+): { start: string; end: string } | null {
+  const slot =
+    slots.find((item) => item.id === slotId && item.dayOfWeek === dayOfWeek) ??
+    slots.find((item) => item.id === slotId);
+  return slot ? { start: slot.startTime, end: slot.endTime } : null;
+}
+
+function buildEntrySignatureSet(entries: EntryRow[], slots: TimingSlotRow[]): Set<string> {
+  const signatures = new Set<string>();
+  for (const entry of entries) {
+    if (!isAssignedEntry(entry)) continue;
+    const slotId = entry.timing_slot_id ?? entry.period_slot_id;
+    const timing = slotTimingKey(slots, slotId, entry.day_of_week);
+    signatures.add(
+      [
+        entry.day_of_week,
+        timing?.start ?? "",
+        timing?.end ?? "",
+        entry.subject_id ?? "",
+        entry.faculty_staff_link_id ?? "",
+        (entry.room_label ?? "").trim(),
+        (entry.custom_label ?? "").trim(),
+        entry.entry_type ?? "",
+      ].join("|"),
+    );
+  }
+  return signatures;
+}
+
+function buildAssignmentSignatureSet(
+  assignments: Array<AssignmentInput & { facultyStaffLinkId?: number | null }>,
+  slots: TimingSlotRow[],
+): Set<string> {
+  const signatures = new Set<string>();
+  for (const assignment of assignments) {
+    const day = toDayCode(String(assignment.dayOfWeek));
+    const timing = slotTimingKey(slots, assignment.timingSlotId, day);
+    const customLabel = (assignment.customLabel ?? "").trim();
+    const isSpecial = customLabel.length > 0 && !assignment.subjectId;
+    if (!isSpecial && (!assignment.subjectId || !assignment.facultyStaffLinkId)) continue;
+    signatures.add(
+      [
+        day,
+        timing?.start ?? "",
+        timing?.end ?? "",
+        assignment.subjectId ?? "",
+        assignment.facultyStaffLinkId ?? "",
+        (assignment.roomLabel ?? "").trim(),
+        customLabel,
+        assignment.entryType ?? "",
+      ].join("|"),
+    );
+  }
+  return signatures;
+}
+
+function signatureSetsEqual(left: Set<string>, right: Set<string>): boolean {
+  if (left.size !== right.size) return false;
+  for (const signature of left) {
+    if (!right.has(signature)) return false;
+  }
+  return true;
+}
+
+async function getPublishComparisonMeta(plan: PlanRow, entries: EntryRow[]) {
+  const publishedPlan = await findPublishedPlanForScope(planScopeFromRow(plan));
+  if (!publishedPlan || publishedPlan.id === plan.id || !plan.timing_template_id) {
+    return {
+      unchanged: false,
+      unchangedFromPublishedPlanId: null as number | null,
+      unchangedFromPublishedVersion: null as number | null,
+      message: null as string | null,
+    };
+  }
+
+  const slots = await listTimingSlots(plan.timing_template_id);
+  const publishedEntries = await loadEntries(publishedPlan.id);
+  const unchanged = signatureSetsEqual(
+    buildEntrySignatureSet(entries, slots),
+    buildEntrySignatureSet(publishedEntries, slots),
+  );
+
+  return {
+    unchanged,
+    unchangedFromPublishedPlanId: unchanged ? publishedPlan.id : null,
+    unchangedFromPublishedVersion: unchanged ? publishedPlan.version_no : null,
+    message: unchanged
+      ? `No changes since published plan #${publishedPlan.id} (version ${publishedPlan.version_no}). The live timetable is already up to date.`
+      : null,
+  };
+}
+
 function buildGrid(
   slots: Awaited<ReturnType<typeof listTimingSlots>>,
   entries: EntryRow[],
@@ -1008,18 +1178,42 @@ export async function validatePlanAssignments(
           AND p.id <> ?
           AND p.college_id = ?
           AND p.status IN ('draft','in_review','published')
+          AND NOT (
+            p.status = 'published'
+            AND p.academic_year_label = ?
+            AND p.college_id = ?
+            AND p.course_id = ?
+            AND p.branch_id = ?
+            AND p.batch = ?
+            AND p.semester_number = ?
+            AND ((? IS NULL AND (p.section_name IS NULL OR p.section_name = '')) OR p.section_name = ?)
+          )
         `,
-        [...facultyIds, plan.id, plan.college_id],
+        [
+          ...facultyIds,
+          plan.id,
+          plan.college_id,
+          plan.academic_year_label,
+          plan.college_id,
+          plan.course_id,
+          plan.branch_id,
+          plan.batch,
+          plan.semester_number,
+          plan.section_name,
+          plan.section_name,
+        ],
       );
 
+      const clashMessages = new Set<string>();
       for (const other of otherEntries) {
         const key = `${other.faculty_staff_link_id}:${other.slot_day}:${String(other.slot_start).slice(0, 5)}:${String(other.slot_end).slice(0, 5)}`;
         if (facultyKeys.has(key)) {
-          facultyClashes.push(
-            `Faculty clash: same staff on ${DAY_CODE_TO_LABEL[other.slot_day]} ${String(other.slot_start).slice(0, 5)}-${String(other.slot_end).slice(0, 5)} (also in plan #${other.other_plan_id} ${other.other_section ?? ""})`,
+          clashMessages.add(
+            `Faculty clash: same staff on ${DAY_CODE_TO_LABEL[other.slot_day]} ${String(other.slot_start).slice(0, 5)}-${String(other.slot_end).slice(0, 5)} (also in plan #${other.other_plan_id}${other.other_section ? ` · ${other.other_section}` : ""})`,
           );
         }
       }
+      facultyClashes.push(...clashMessages);
     }
   }
 
@@ -1035,6 +1229,11 @@ export async function validatePlanAssignments(
     }
   }
 
+  const publishComparison = await getPublishComparisonMeta(plan, entries);
+  if (publishComparison.message) {
+    warnings.push(publishComparison.message);
+  }
+
   const ok =
     sectionClashes.length === 0 &&
     facultyClashes.length === 0 &&
@@ -1048,6 +1247,10 @@ export async function validatePlanAssignments(
     facultyClashes,
     roomClashes: [] as string[],
     warnings,
+    unchanged: publishComparison.unchanged,
+    unchangedFromPublishedPlanId: publishComparison.unchangedFromPublishedPlanId,
+    unchangedFromPublishedVersion: publishComparison.unchangedFromPublishedVersion,
+    message: publishComparison.message,
   };
 }
 
@@ -1125,6 +1328,60 @@ export async function saveTimetableDraft(input: {
   const verifiedAssignments = await resolveAssignmentSubjectsFromEms(
     input.assignments,
   );
+
+  const publishedPlan = await findPublishedPlanForScope(planScopeFromDraftInput(input));
+  const timingSlots = await listTimingSlots(timing.id);
+  const resolvedAssignments: Array<AssignmentInput & { facultyStaffLinkId: number | null }> = [];
+  for (const assignment of verifiedAssignments) {
+    resolvedAssignments.push({
+      ...assignment,
+      facultyStaffLinkId: await resolveFacultyLink(assignment),
+    });
+  }
+
+  const existingDraft = await queryAcademic<PlanRow[]>(
+    `
+    SELECT * FROM ap_timetable_plans
+    WHERE academic_year_label = ?
+      AND college_id = ?
+      AND course_id = ?
+      AND branch_id = ?
+      AND batch = ?
+      AND semester_number = ?
+      AND ((? IS NULL AND (section_name IS NULL OR section_name = '')) OR section_name = ?)
+      AND status IN ('draft','in_review')
+    ORDER BY id DESC
+    LIMIT 1
+    `,
+    [
+      input.academicYear,
+      input.collegeId,
+      input.courseId,
+      input.branchId,
+      input.batch,
+      input.semester,
+      input.section ?? null,
+      input.section ?? null,
+    ],
+  );
+
+  if (!existingDraft[0] && publishedPlan) {
+    const publishedEntries = await loadEntries(publishedPlan.id);
+    if (
+      signatureSetsEqual(
+        buildAssignmentSignatureSet(resolvedAssignments, timingSlots),
+        buildEntrySignatureSet(publishedEntries, timingSlots),
+      )
+    ) {
+      return {
+        planId: publishedPlan.id,
+        status: "published",
+        versionNo: publishedPlan.version_no,
+        timingTemplateId: timing.id,
+        unchanged: true,
+      };
+    }
+  }
 
   return withAcademicTransaction(async (conn) => {
     const [existingRows] = await conn.query<PlanRow[]>(
@@ -1318,6 +1575,13 @@ export async function publishTimetablePlan(planId: number) {
   const review = await validatePlanAssignments(plan, entries, {
     requireComplete: true,
   });
+  if (review.unchanged) {
+    const err = new Error(
+      review.message ?? "This timetable is already published with no changes.",
+    );
+    (err as Error & { review?: unknown }).review = review;
+    throw err;
+  }
   if (!review.ok) {
     const err = new Error("Publish blocked: timetable has validation errors");
     (err as Error & { review?: unknown }).review = review;

@@ -22,6 +22,7 @@ const HIDDEN_ON = [
   "/academic-calendar",
   "/attendance-calendar",
   "/user-management",
+  "/staff-workload",
 ];
 
 type Props = {
@@ -42,12 +43,15 @@ export function AcademicFilterBar({ title = "Filters" }: Props) {
     (path) => pathname === path || pathname.startsWith(`${path}/`),
   );
   
-  // Hide filters on dashboard unconditionally
-  const hidden = hiddenOnPath || isDashboard;
+  const isStudentDetail = pathname.startsWith("/students/") && pathname !== "/students";
+  const isMentoringDetail = pathname.startsWith("/mentoring-risks/") && pathname !== "/mentoring-risks";
+  
+  // Hide filters on dashboard and detail pages unconditionally
+  const hidden = hiddenOnPath || isDashboard || isStudentDetail || isMentoringDetail;
   const showSearch =
-    pathname === "/students" || pathname.startsWith("/students/");
+    pathname === "/students";
   const isMentoringPage =
-    pathname === "/mentoring-risks" || pathname.startsWith("/mentoring-risks/");
+    pathname === "/mentoring-risks";
   const showStudentQuerySearch = showSearch || isMentoringPage;
   const isTimetablesPage =
     pathname === "/timetables" || pathname.startsWith("/timetables/");

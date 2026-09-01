@@ -12,6 +12,7 @@ import { FilterBar, FilterField } from "@/components/ui/FilterBar";
 import { useAcademicContext } from "@/components/layout/AcademicProvider";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { apiFetch } from "@/lib/api";
+import { StudentAvatar } from "@/features/students/StudentAvatar";
 import { MentoringStudentCard } from "./MentoringStudentCard";
 import type { MentoringDashboardResponse, MentoringListFilters } from "./types";
 import { buildMentoringQuery, formatComplaintStatus } from "./utils";
@@ -178,7 +179,16 @@ export function MentoringRisksView() {
               rowKey={(row) => row.id}
               emptyMessage="No mentoring/risk records available"
               columns={[
-                { key: "name", header: "Student", render: (row) => row.name },
+                { 
+                  key: "name", 
+                  header: "Student", 
+                  render: (row) => (
+                    <div className="flex items-center gap-2">
+                      <StudentAvatar name={row.name} photo={null} studentId={row.id} hasPhoto={true} size="sm" />
+                      <span className="font-medium text-navy-900">{row.name}</span>
+                    </div>
+                  ) 
+                },
                 {
                   key: "rollNo",
                   header: "Roll / Adm.",

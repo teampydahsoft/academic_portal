@@ -26,6 +26,51 @@ export const DAY_LABEL_TO_CODE: Record<string, DayCode> = {
   Sunday: "SUN",
 };
 
+export function isNonClassTimingSlot(slot: {
+  slotType: SlotType | string;
+  isAssignable?: boolean;
+}): boolean {
+  return (
+    slot.isAssignable === false ||
+    slot.slotType === "BREAK" ||
+    slot.slotType === "LUNCH" ||
+    slot.slotType === "ACTIVITY" ||
+    slot.slotType === "OTHER"
+  );
+}
+
+export function timingSlotDisplayLabel(slot: {
+  slotType: SlotType | string;
+  label: string;
+  isAssignable?: boolean;
+  startTime?: string;
+  endTime?: string;
+}): string {
+  const label = slot.label?.trim() || "";
+  const lower = label.toLowerCase();
+
+  if (slot.slotType === "LUNCH" || lower.includes("lunch")) return "Lunch Break";
+  if (slot.slotType === "BREAK" || lower.includes("break") || lower.includes("tea")) {
+    return "Break";
+  }
+  if (slot.slotType === "ACTIVITY") return label || "Activity";
+  if (slot.slotType === "OTHER") return label || "Other";
+
+  if (isNonClassTimingSlot(slot)) {
+    if (slot.startTime && slot.endTime) {
+      const [sh, sm] = slot.startTime.split(":").map(Number);
+      const [eh, em] = slot.endTime.split(":").map(Number);
+      if ([sh, sm, eh, em].every(Number.isFinite)) {
+        const minutes = eh * 60 + em - (sh * 60 + sm);
+        if (minutes >= 45) return "Lunch Break";
+      }
+    }
+    return "Break";
+  }
+
+  return label || "Period";
+}
+
 export const ALL_DAY_CODES: DayCode[] = [
   "MON",
   "TUE",

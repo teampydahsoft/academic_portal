@@ -10,7 +10,7 @@ import { StatusBadge } from "@/components/ui/StatusBadge";
 import { apiFetch } from "@/lib/api";
 import { cn } from "@/lib/cn";
 
-type AttendanceMark = "present" | "absent" | "od" | "leave";
+type AttendanceMark = "present" | "absent";
 
 type StudentMark = {
   id: string;
@@ -39,14 +39,16 @@ type Payload = {
   students: StudentMark[];
 };
 
-const MARKS: AttendanceMark[] = ["present", "absent", "od", "leave"];
+const MARKS: AttendanceMark[] = ["present", "absent"];
 
 const markClass: Record<AttendanceMark, string> = {
   present: "bg-green-50 text-success",
   absent: "bg-red-50 text-critical",
-  od: "bg-blue-50 text-info",
-  leave: "bg-amber-50 text-warning",
 };
+
+function normalizeStatus(status: string | null | undefined): AttendanceMark {
+  return status === "present" ? "present" : "absent";
+}
 
 export function AttendancePostSessionView() {
   const params = useParams<{ sessionId: string }>();
@@ -80,7 +82,12 @@ export function AttendancePostSessionView() {
         if (!cancelled) {
           const data = body as Payload;
           setPayload(data);
-          setStudents(data.students);
+          setStudents(
+            data.students.map((student) => ({
+              ...student,
+              status: normalizeStatus(student.status),
+            })),
+          );
         }
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : "Unable to load");
@@ -109,8 +116,6 @@ export function AttendancePostSessionView() {
       total: students.length,
       present: students.filter((s) => s.status === "present").length,
       absent: students.filter((s) => s.status === "absent").length,
-      od: students.filter((s) => s.status === "od").length,
-      leave: students.filter((s) => s.status === "leave").length,
     };
   }, [students]);
 
@@ -195,6 +200,14 @@ export function AttendancePostSessionView() {
             >
               Present All
             </Button>
+            <Button
+              variant="secondary"
+              onClick={() =>
+                setStudents((prev) => prev.map((s) => ({ ...s, status: "absent" })))
+              }
+            >
+              Absent All
+            </Button>
             <Button disabled={busy || students.length === 0} onClick={() => void submit()}>
               {busy ? "Saving…" : payload.posted ? "Update Attendance" : "Submit Attendance"}
             </Button>
@@ -227,7 +240,7 @@ export function AttendancePostSessionView() {
         </label>
       ) : null}
 
-      <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+      <div className="mb-4 grid gap-3 sm:grid-cols-3">
         <Card>
           <p className="text-xs text-slate-500">Students</p>
           <p className="text-2xl font-semibold text-navy-900">{counts.total}</p>
@@ -239,14 +252,6 @@ export function AttendancePostSessionView() {
         <Card>
           <p className="text-xs text-slate-500">Absent</p>
           <p className="text-2xl font-semibold text-critical">{counts.absent}</p>
-        </Card>
-        <Card>
-          <p className="text-xs text-slate-500">OD</p>
-          <p className="text-2xl font-semibold text-info">{counts.od}</p>
-        </Card>
-        <Card>
-          <p className="text-xs text-slate-500">Leave</p>
-          <p className="text-2xl font-semibold text-warning">{counts.leave}</p>
         </Card>
       </div>
 

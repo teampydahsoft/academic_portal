@@ -16,6 +16,11 @@ import {
 export type AttendanceMark = "present" | "absent" | "od" | "leave";
 
 const MARKS: AttendanceMark[] = ["present", "absent", "od", "leave"];
+const POSTING_MARKS: AttendanceMark[] = ["present", "absent"];
+
+function normalizePostingMark(status: AttendanceMark | string | null | undefined): AttendanceMark {
+  return status === "present" ? "present" : "absent";
+}
 
 type SessionListRow = RowDataPacket & {
   id: number;
@@ -429,7 +434,7 @@ export async function getAttendanceSession(sessionId: number) {
         studentDbId: Number(student.id),
         name: student.student_name ?? "Unknown",
         admissionNo: student.admission_number,
-        status: (existing?.status ?? "present") as AttendanceMark,
+        status: normalizePostingMark(existing?.status),
         remarks: existing?.remarks ?? null,
       };
     }),
@@ -492,8 +497,11 @@ export async function postAttendance(
         { status: 400 },
       );
     }
-    if (!MARKS.includes(item.status)) {
-      throw Object.assign(new Error(`Invalid status: ${item.status}`), { status: 400 });
+    if (!POSTING_MARKS.includes(item.status)) {
+      throw Object.assign(
+        new Error(`Invalid status: ${item.status}. Only present or absent are allowed.`),
+        { status: 400 },
+      );
     }
     return {
       studentDbId: Number(student.id),

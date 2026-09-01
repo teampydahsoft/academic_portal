@@ -1,5 +1,5 @@
 import type { RowDataPacket } from "mysql2";
-import { getHrmsDb, queryAcademic } from "../db/pools.js";
+import { getHrmsDb, queryAcademic, queryStudent } from "../db/pools.js";
 import {
   extractHrmsStaffProfile,
   HRMS_EMPLOYEE_PROJECTION,
@@ -58,6 +58,8 @@ type EntryRow = RowDataPacket & {
   year_of_study: number | null;
   semester_number: number | null;
   college_id: number;
+  course_id: number;
+  branch_id: number;
   academic_year_label: string;
   slot_label: string | null;
   start_time: string | null;
@@ -333,6 +335,9 @@ export async function getFacultyDetail(hrmsEmployeeId: string) {
     year: number | null;
     semester: number | null;
     collegeId: number;
+    courseId: number;
+    branchId: number;
+    branchName: string | null;
     academicYear: string;
     slotLabel: string | null;
     startTime: string | null;
@@ -357,7 +362,7 @@ export async function getFacultyDetail(hrmsEmployeeId: string) {
          e.id AS entry_id, e.plan_id, e.day_of_week, e.entry_type,
          e.subject_code, e.subject_name,
          p.section_name, p.batch, p.year_of_study, p.semester_number,
-         p.college_id, p.academic_year_label,
+         p.college_id, p.course_id, p.branch_id, p.academic_year_label,
          ts.label AS slot_label, ts.start_time, ts.end_time,
          e.room_label
        FROM ap_timetable_entries e
@@ -370,8 +375,21 @@ export async function getFacultyDetail(hrmsEmployeeId: string) {
       [staffLinkId],
     );
 
+    const branchIds = [...new Set(rows.map((row) => Number(row.branch_id)).filter((id) => id > 0))];
+    const branchNames = new Map<number, string>();
+    if (branchIds.length > 0) {
+      const branchRows = await queryStudent<(RowDataPacket & { id: number; name: string })[]>(
+        `SELECT id, name FROM course_branches WHERE id IN (${branchIds.map(() => "?").join(",")})`,
+        branchIds,
+      );
+      for (const branch of branchRows) {
+        branchNames.set(Number(branch.id), String(branch.name ?? "").trim());
+      }
+    }
+
     assignments = rows.map((row) => {
       const mins = slotDurationMinutes(row.start_time, row.end_time);
+      const branchId = Number(row.branch_id);
       return {
         entryId: Number(row.entry_id),
         planId: Number(row.plan_id),
@@ -383,7 +401,10 @@ export async function getFacultyDetail(hrmsEmployeeId: string) {
         batch: row.batch,
         year: row.year_of_study,
         semester: row.semester_number,
-        collegeId: row.college_id,
+        collegeId: Number(row.college_id),
+        courseId: Number(row.course_id),
+        branchId,
+        branchName: branchNames.get(branchId) ?? null,
         academicYear: row.academic_year_label,
         slotLabel: row.slot_label,
         startTime: row.start_time ? String(row.start_time).slice(0, 5) : null,

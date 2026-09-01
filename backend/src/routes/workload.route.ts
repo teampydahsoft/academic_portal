@@ -12,34 +12,22 @@ import {
 
 export const workloadRouter = Router();
 
-function num(value: unknown) {
-  if (typeof value !== "string" && typeof value !== "number") return undefined;
-  if (value === "" || value === "all") return undefined;
-  const n = Number(value);
-  return Number.isFinite(n) ? n : undefined;
-}
-
 function str(value: unknown) {
   if (typeof value !== "string" || value === "" || value === "all") return undefined;
   return value;
 }
 
-function filtersFromReq(req: AuthedRequest) {
-  const scoped = scopedFilters(req, {
-    collegeId: num(req.query.collegeId),
-    branchId: num(req.query.branchId),
-  });
+function summaryFiltersFromReq(req: AuthedRequest) {
+  const scoped = scopedFilters(req, {});
   return {
     collegeId: scoped.collegeId,
     collegeIds: scoped.collegeIds,
-    courseId: num(req.query.courseId),
     branchId: scoped.branchId,
     branchIds: scoped.branchIds,
-    batch: str(req.query.batch),
-    year: num(req.query.year),
-    semester: num(req.query.semester),
-    section: str(req.query.section),
-    academicYear: str(req.query.academicYear),
+    scopeOnly: true,
+    division: str(req.query.division),
+    department: str(req.query.department),
+    search: str(req.query.search),
   };
 }
 
@@ -48,7 +36,7 @@ workloadRouter.get(
   requirePermission("workload.view"),
   async (req: AuthedRequest, res, next) => {
     try {
-      res.json(await getWorkloadSummary(filtersFromReq(req)));
+      res.json(await getWorkloadSummary(summaryFiltersFromReq(req)));
     } catch (error) {
       const status = statusFromAuthzError(error);
       if (status === 401 || status === 403) {
@@ -68,7 +56,14 @@ workloadRouter.get(
       const facultyId = Array.isArray(req.params.facultyId)
         ? req.params.facultyId[0]
         : req.params.facultyId;
-      const faculty = await getFacultyWorkloadDetail(String(facultyId), filtersFromReq(req));
+      const scoped = scopedFilters(req, {});
+      const faculty = await getFacultyWorkloadDetail(String(facultyId), {
+        collegeId: scoped.collegeId,
+        collegeIds: scoped.collegeIds,
+        branchId: scoped.branchId,
+        branchIds: scoped.branchIds,
+        scopeOnly: true,
+      });
       if (!faculty) {
         res.status(404).json({ message: "Faculty not found" });
         return;

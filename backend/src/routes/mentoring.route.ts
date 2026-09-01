@@ -9,12 +9,17 @@ import {
 import {
   addIntervention,
   assignMentor,
+  assignMentorsBulk,
+  assignMentorsBySections,
   createRiskCase,
   deactivateMentorAssignment,
+  deactivateMentorSections,
   getMentoringDashboard,
   getMentoringStudentDetail,
   getRiskCaseById,
   listMentorAssignments,
+  listMentorMenteesDetailed,
+  parseMentorSectionScopes,
   searchMentoringStaff,
   updateRiskCaseStatus,
   type InterventionType,
@@ -138,6 +143,128 @@ mentoringRouter.post("/assignments", requirePermission("mentoring.assign"), asyn
     next(error);
   }
 });
+
+mentoringRouter.post(
+  "/assignments/bulk",
+  requirePermission("mentoring.assign"),
+  async (req: AuthedRequest, res, next) => {
+    try {
+      const facultyStaffLinkId = Number(req.body?.facultyStaffLinkId);
+      const rawIds = Array.isArray(req.body?.studentDbIds) ? req.body.studentDbIds : [];
+      const studentDbIds = rawIds.map((id: unknown) => Number(id)).filter((id: number) => Number.isFinite(id));
+      if (!Number.isFinite(facultyStaffLinkId)) {
+        res.status(400).json({ message: "facultyStaffLinkId is required" });
+        return;
+      }
+      const result = await assignMentorsBulk(getAuthz(req), {
+        facultyStaffLinkId,
+        studentDbIds,
+        academicYearLabel:
+          typeof req.body?.academicYearLabel === "string" ? req.body.academicYearLabel : undefined,
+        notes: typeof req.body?.notes === "string" ? req.body.notes : undefined,
+        ipAddress: req.ip,
+      });
+      res.status(201).json(result);
+    } catch (error) {
+      const status = statusFromAuthzError(error);
+      if (status >= 400 && status < 500) {
+        res.status(status).json({ message: (error as Error).message });
+        return;
+      }
+      next(error);
+    }
+  },
+);
+
+mentoringRouter.post(
+  "/assignments/by-sections",
+  requirePermission("mentoring.assign"),
+  async (req: AuthedRequest, res, next) => {
+    try {
+      const facultyStaffLinkId = Number(req.body?.facultyStaffLinkId);
+      const sections = parseMentorSectionScopes(req.body?.sections);
+      if (!Number.isFinite(facultyStaffLinkId)) {
+        res.status(400).json({ message: "facultyStaffLinkId is required" });
+        return;
+      }
+      if (sections.length === 0) {
+        res.status(400).json({ message: "At least one valid section is required" });
+        return;
+      }
+      const result = await assignMentorsBySections(getAuthz(req), {
+        facultyStaffLinkId,
+        sections,
+        academicYearLabel:
+          typeof req.body?.academicYearLabel === "string" ? req.body.academicYearLabel : undefined,
+        notes: typeof req.body?.notes === "string" ? req.body.notes : undefined,
+        ipAddress: req.ip,
+      });
+      res.status(201).json(result);
+    } catch (error) {
+      const status = statusFromAuthzError(error);
+      if (status >= 400 && status < 500) {
+        res.status(status).json({ message: (error as Error).message });
+        return;
+      }
+      next(error);
+    }
+  },
+);
+
+mentoringRouter.post(
+  "/assignments/unassign-sections",
+  requirePermission("mentoring.assign"),
+  async (req: AuthedRequest, res, next) => {
+    try {
+      const facultyStaffLinkId = Number(req.body?.facultyStaffLinkId);
+      const sections = parseMentorSectionScopes(req.body?.sections);
+      if (!Number.isFinite(facultyStaffLinkId)) {
+        res.status(400).json({ message: "facultyStaffLinkId is required" });
+        return;
+      }
+      if (sections.length === 0) {
+        res.status(400).json({ message: "At least one valid section is required" });
+        return;
+      }
+      const result = await deactivateMentorSections(getAuthz(req), {
+        facultyStaffLinkId,
+        sections,
+        ipAddress: req.ip,
+      });
+      res.json(result);
+    } catch (error) {
+      const status = statusFromAuthzError(error);
+      if (status >= 400 && status < 500) {
+        res.status(status).json({ message: (error as Error).message });
+        return;
+      }
+      next(error);
+    }
+  },
+);
+
+mentoringRouter.get(
+  "/mentors/:staffLinkId/mentees",
+  requirePermission("mentoring.view"),
+  async (req: AuthedRequest, res, next) => {
+    try {
+      const staffLinkId = Number(paramId(req.params.staffLinkId));
+      if (!Number.isFinite(staffLinkId)) {
+        res.status(400).json({ message: "Invalid staff link id" });
+        return;
+      }
+      const data = await listMentorMenteesDetailed(getAuthz(req), staffLinkId);
+      res.json({ data });
+    } catch (error) {
+      const status = statusFromAuthzError(error);
+      if (status >= 400 && status < 500) {
+        res.status(status).json({ message: (error as Error).message });
+        return;
+      }
+      next(error);
+    }
+  },
+);
 
 mentoringRouter.delete(
   "/assignments/:id",
