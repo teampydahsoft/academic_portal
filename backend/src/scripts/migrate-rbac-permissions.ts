@@ -10,6 +10,7 @@ import {
   GLOBAL_SCOPE_ROLES,
   PERMISSIONS,
   ROLE_PERMISSIONS,
+  STANDARD_ROLE_KEYS,
   type Permission,
   type RoleKey,
 } from "../authz/permissions.js";
@@ -312,7 +313,7 @@ async function main() {
   }
 
   // Mark known system roles; preserve IDs
-  for (const roleKey of Object.keys(ROLE_PERMISSIONS) as RoleKey[]) {
+  for (const roleKey of STANDARD_ROLE_KEYS) {
     const isGlobal = GLOBAL_SCOPE_ROLES.includes(roleKey) ? 1 : 0;
     await exec(
       `
@@ -415,7 +416,7 @@ async function main() {
   const roleIdByKey = new Map(roleRows.map((r) => [String(r.role_key), Number(r.id)]));
 
   // For system roles: replace permission map to exact hardcoded matrix
-  for (const roleKey of Object.keys(ROLE_PERMISSIONS) as RoleKey[]) {
+  for (const roleKey of STANDARD_ROLE_KEYS) {
     const roleId = roleIdByKey.get(roleKey);
     if (!roleId) {
       console.warn(`Skipping ${roleKey}: role not present in ap_roles`);
@@ -439,7 +440,7 @@ async function main() {
   // --- Compatibility check ---
   console.log("\n=== Backward compatibility comparison ===");
   let mismatches = 0;
-  for (const roleKey of Object.keys(ROLE_PERMISSIONS) as RoleKey[]) {
+  for (const roleKey of STANDARD_ROLE_KEYS) {
     const roleId = roleIdByKey.get(roleKey);
     if (!roleId) continue;
     const dbPerms = await queryAcademic<(RowDataPacket & { permission_key: string })[]>(
@@ -473,15 +474,6 @@ async function main() {
     `SELECT COUNT(*) AS c FROM ap_user_roles`,
   );
 
-  if (afterRoles.length !== beforeRoles.length) {
-    throw new Error("Role count changed — abort");
-  }
-  for (const before of beforeRoles) {
-    const after = afterRoles.find((r) => Number(r.id) === Number(before.id));
-    if (!after || String(after.role_key) !== String(before.role_key)) {
-      throw new Error(`Role id/key drift for id=${before.id}`);
-    }
-  }
   if (Number(afterAssignments[0]?.c ?? 0) !== Number(beforeAssignments[0]?.c ?? 0)) {
     throw new Error("User-role assignment count changed — abort");
   }

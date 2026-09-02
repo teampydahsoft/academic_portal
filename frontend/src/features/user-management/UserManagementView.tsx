@@ -844,7 +844,7 @@ function UserDetailModal(props: {
   const displayRoles = useMemo(
     () =>
       props.availableRoles.filter(
-        (role) => role.roleKey !== "system_admin" || assignedRoleKeys.has("system_admin"),
+        (role) => role.roleKey !== "super_admin" || assignedRoleKeys.has("super_admin"),
       ),
     [props.availableRoles, assignedRoleKeys],
   );
@@ -1422,7 +1422,7 @@ function RolesDialog(props: {
     setRows((prev) => [
       ...prev,
       {
-        roleKey: props.roles[0]?.roleKey ?? "faculty",
+        roleKey: props.roles[0]?.roleKey ?? "staff",
         collegeId: "",
         courseId: "",
         branchId: "",

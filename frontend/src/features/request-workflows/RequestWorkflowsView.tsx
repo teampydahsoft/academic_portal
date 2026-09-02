@@ -336,7 +336,7 @@ export function RequestWorkflowsView() {
     <div>
       <PageHeader
         title="Request Workflows"
-        description="Configure request types and approval hierarchies using dynamic roles from the database."
+        description="Configure the faculty substitution approval hierarchy using dynamic roles from the database."
         actions={
           <Link href="/settings" className="text-sm text-navy-800 hover:underline">
             ← Back to Settings
@@ -360,44 +360,12 @@ export function RequestWorkflowsView() {
       ) : (
         <div className="grid gap-4 lg:grid-cols-[minmax(0,320px)_1fr]">
           <Card className="h-fit">
-            <div className="mb-3 flex items-center justify-between gap-2">
-              <h2 className="font-semibold text-navy-900">Request types</h2>
-              <Button size="sm" variant="secondary" onClick={() => setShowNewType((v) => !v)}>
-                <Plus className="mr-1 h-3.5 w-3.5" />
-                New
-              </Button>
+            <div className="mb-3">
+              <h2 className="font-semibold text-navy-900">Faculty substitution workflow</h2>
+              <p className="mt-1 text-xs text-slate-500">
+                Approval steps for substitution requests.
+              </p>
             </div>
-
-            {showNewType ? (
-              <div className="mb-4 space-y-2 rounded-lg border border-border bg-slate-50 p-3">
-                <input
-                  value={newTypeKey}
-                  onChange={(e) => setNewTypeKey(e.target.value)}
-                  placeholder="Type key"
-                  className="h-9 w-full rounded-md border border-border px-3 text-sm"
-                />
-                <input
-                  value={newTypeLabel}
-                  onChange={(e) => setNewTypeLabel(e.target.value)}
-                  placeholder="Display label"
-                  className="h-9 w-full rounded-md border border-border px-3 text-sm"
-                />
-                <textarea
-                  value={newTypeDescription}
-                  onChange={(e) => setNewTypeDescription(e.target.value)}
-                  placeholder="Description (optional)"
-                  className="min-h-16 w-full rounded-md border border-border px-3 py-2 text-sm"
-                />
-                <div className="flex flex-col gap-2 sm:flex-row">
-                  <Button size="sm" className="w-full sm:w-auto" disabled={saving} onClick={() => void handleCreateType()}>
-                    Create type
-                  </Button>
-                  <Button size="sm" variant="secondary" className="w-full sm:w-auto" onClick={() => setShowNewType(false)}>
-                    Cancel
-                  </Button>
-                </div>
-              </div>
-            ) : null}
 
             <ul className="space-y-2">
               {types.map((type) => {

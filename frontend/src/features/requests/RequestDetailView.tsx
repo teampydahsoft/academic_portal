@@ -2,11 +2,14 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { EmptyState } from "@/components/ui/EmptyState";
+import { useAuth } from "@/components/auth/AuthProvider";
+import { isSuperAdminUser } from "@/lib/teaching-scope";
 import { apiFetch } from "@/lib/api";
 import { RequestActionPanel } from "./RequestActionPanel";
 import { RequestDetailSkeleton } from "./RequestListSkeleton";
@@ -19,6 +22,10 @@ import type { RequestDetailResponse } from "./types";
 type Props = { requestId: string };
 
 export function RequestDetailView({ requestId }: Props) {
+  const searchParams = useSearchParams();
+  const { authorization, hasPermission } = useAuth();
+  const superAdminUser = isSuperAdminUser(authorization);
+  const fromPending = searchParams.get("from") === "pending";
   const [detail, setDetail] = useState<RequestDetailResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -139,16 +146,29 @@ export function RequestDetailView({ requestId }: Props) {
   }
 
   const { request } = detail;
+  const backHref = fromPending
+    ? "/requests/pending"
+    : hasPermission("request.view") && !superAdminUser
+      ? "/requests"
+      : superAdminUser
+        ? "/requests/pending"
+        : "/dashboard";
+  const backLabel =
+    backHref === "/requests/pending"
+      ? "Back to pending"
+      : backHref === "/requests"
+        ? "My requests"
+        : "Back to dashboard";
 
   return (
     <div className="min-w-0 space-y-4">
       <PageHeader
         title={request.title}
-        description={`${request.typeLabel ?? request.typeKey ?? "Request"} • ${request.requesterName ?? "—"}`}
+        description={request.requesterName ?? "—"}
         actions={
-          <Link href="/requests">
+          <Link href={backHref}>
             <Button size="sm" variant="secondary">
-              Back
+              {backLabel}
             </Button>
           </Link>
         }
@@ -160,82 +180,87 @@ export function RequestDetailView({ requestId }: Props) {
         </div>
       ) : null}
 
-      <Card>
-        <div className="mb-4 flex flex-wrap items-center gap-2">
-          <StatusBadge status={request.status} />
-          {request.currentStepLabel ? (
-            <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-warning">
-              {request.currentStepLabel}
-            </span>
-          ) : null}
-        </div>
-
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div>
-            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Requester</p>
-            <p className="text-sm text-navy-900">{request.requesterName ?? "—"}</p>
-          </div>
-          <div>
-            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-              College / Branch
-            </p>
-            <RequestScopeMeta request={request} />
-          </div>
-          <div>
-            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Submitted</p>
-            <p className="text-sm text-navy-900">{formatRequestDateTime(request.submittedAt)}</p>
-          </div>
-          <div>
-            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Last updated</p>
-            <p className="text-sm text-navy-900">{formatRequestDateTime(request.updatedAt)}</p>
-          </div>
-        </div>
-
-        {detail.substitution ? (
-          <div className="mt-4 border-t border-border pt-4">
-            <SubstitutionRequestSummary detail={detail.substitution} />
-          </div>
-        ) : null}
-
-        <div className="mt-4 border-t border-border pt-4">
-          <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">
-            Description
-          </p>
-          {detail.canEdit ? (
-            <div className="space-y-3">
-              <input
-                value={editTitle}
-                onChange={(event) => setEditTitle(event.target.value)}
-                className="h-11 w-full rounded-md border border-border bg-white px-3 text-sm outline-none focus:border-navy-800"
-              />
-              <textarea
-                value={editBody}
-                onChange={(event) => setEditBody(event.target.value)}
-                className="min-h-32 w-full rounded-md border border-border bg-white px-3 py-2 text-sm outline-none focus:border-navy-800"
-              />
-              <Button size="sm" disabled={busy || !editTitle.trim()} onClick={() => void saveDraft()}>
-                Save draft
-              </Button>
+      <div className="grid gap-4 lg:grid-cols-2 lg:items-start">
+        <div className="min-w-0 space-y-4">
+          <Card>
+            <h2 className="mb-3 text-sm font-semibold text-navy-900">Request details</h2>
+            <div className="mb-4 flex flex-wrap items-center gap-2">
+              <StatusBadge status={request.status} />
+              {request.currentStepLabel ? (
+                <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-warning">
+                  {request.currentStepLabel}
+                </span>
+              ) : null}
             </div>
-          ) : request.body ? (
-            <p className="whitespace-pre-wrap break-words text-sm text-slate-700">{request.body}</p>
-          ) : (
-            <p className="text-sm text-slate-400">No description provided.</p>
-          )}
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Requester</p>
+                <p className="text-sm text-navy-900">{request.requesterName ?? "—"}</p>
+              </div>
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                  College / Branch
+                </p>
+                <RequestScopeMeta request={request} />
+              </div>
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Submitted</p>
+                <p className="text-sm text-navy-900">{formatRequestDateTime(request.submittedAt)}</p>
+              </div>
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Last updated</p>
+                <p className="text-sm text-navy-900">{formatRequestDateTime(request.updatedAt)}</p>
+              </div>
+            </div>
+
+            {detail.substitution ? (
+              <div className="mt-4 border-t border-border pt-4">
+                <SubstitutionRequestSummary detail={detail.substitution} />
+              </div>
+            ) : null}
+
+            <div className="mt-4 border-t border-border pt-4">
+              <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">
+                Description
+              </p>
+              {detail.canEdit ? (
+                <div className="space-y-3">
+                  <input
+                    value={editTitle}
+                    onChange={(event) => setEditTitle(event.target.value)}
+                    className="h-11 w-full rounded-md border border-border bg-white px-3 text-sm outline-none focus:border-navy-800"
+                  />
+                  <textarea
+                    value={editBody}
+                    onChange={(event) => setEditBody(event.target.value)}
+                    className="min-h-32 w-full rounded-md border border-border bg-white px-3 py-2 text-sm outline-none focus:border-navy-800"
+                  />
+                  <Button size="sm" disabled={busy || !editTitle.trim()} onClick={() => void saveDraft()}>
+                    Save draft
+                  </Button>
+                </div>
+              ) : request.body ? (
+                <p className="whitespace-pre-wrap break-words text-sm text-slate-700">{request.body}</p>
+              ) : (
+                <p className="text-sm text-slate-400">No description provided.</p>
+              )}
+            </div>
+          </Card>
+
+          <RequestActionPanel detail={detail} busy={busy} error={actionError} onAction={runAction} />
         </div>
-      </Card>
 
-      <RequestActionPanel detail={detail} busy={busy} error={actionError} onAction={runAction} />
-
-      <Card>
-        <h2 className="mb-3 text-sm font-semibold text-navy-900">Approval workflow</h2>
-        <RequestTimeline
-          history={detail.history}
-          workflowSteps={detail.workflowSteps}
-          currentStepOrder={request.currentStepOrder}
-          status={request.status}
-        />
-      </Card>
+        <Card className="min-w-0 lg:max-h-[calc(100vh-10rem)] lg:overflow-y-auto">
+          <h2 className="mb-3 text-sm font-semibold text-navy-900">Approval workflow</h2>
+          <RequestTimeline
+            history={detail.history}
+            workflowSteps={detail.workflowSteps}
+            currentStepOrder={request.currentStepOrder}
+            status={request.status}
+          />
+        </Card>
+      </div>
     </div>
   );
 }

@@ -201,15 +201,74 @@ export const TEACHING_STAFF_NAV_HREFS = new Set([
   "/mentoring-risks",
 ]);
 
+/** Sidebar routes hidden for global super admin (institute oversight only). */
+export const SUPER_ADMIN_HIDDEN_NAV_HREFS = new Set(["/my-timetable"]);
+
+/** Resolve the most specific nav item for a pathname (longest href wins). */
+export function navItemForPath(pathname: string): NavItem | null {
+  let best: NavItem | null = null;
+  for (const group of NAV_GROUPS) {
+    for (const item of group.items) {
+      if (pathname === item.href || pathname.startsWith(`${item.href}/`)) {
+        if (!best || item.href.length > best.href.length) {
+          best = item;
+        }
+      }
+    }
+  }
+  return best;
+}
+
+export type BreadcrumbSegment = { label: string; href?: string };
+
+export function navLabelForItem(item: NavItem, options?: { superAdminUser?: boolean }) {
+  if (options?.superAdminUser && item.href === "/requests") {
+    return "All Requests";
+  }
+  return item.label;
+}
+
+export function breadcrumbsForPath(pathname: string): BreadcrumbSegment[] {
+  if (pathname.startsWith("/requests")) {
+    const segments: BreadcrumbSegment[] = [{ label: "Requests", href: "/requests" }];
+    if (pathname === "/requests") return segments;
+
+    if (pathname === "/requests/pending") {
+      segments.push({ label: "Pending Requests" });
+      return segments;
+    }
+    if (pathname === "/requests/new") {
+      segments.push({ label: "Create request" });
+      return segments;
+    }
+    if (/^\/requests\/\d+/.test(pathname)) {
+      segments.push({ label: "Request details" });
+      return segments;
+    }
+
+    const current = navItemForPath(pathname);
+    if (current && current.href !== "/requests") {
+      segments.push({ label: current.label, href: current.href });
+    }
+    return segments;
+  }
+
+  const current = navItemForPath(pathname);
+  return [{ label: current?.label ?? "Academic Portal" }];
+}
+
 export function filterNavGroups(
   groups: NavGroup[],
   hasAnyPermission: (...permissions: string[]) => boolean,
-  options?: { teachingStaffOnly?: boolean },
+  options?: { teachingStaffOnly?: boolean; superAdminUser?: boolean },
 ): NavGroup[] {
   return groups
     .map((group) => ({
       ...group,
       items: group.items.filter((item) => {
+        if (options?.superAdminUser && SUPER_ADMIN_HIDDEN_NAV_HREFS.has(item.href)) {
+          return false;
+        }
         if (options?.teachingStaffOnly && !TEACHING_STAFF_NAV_HREFS.has(item.href)) {
           return false;
         }

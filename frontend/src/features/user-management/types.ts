@@ -106,9 +106,9 @@ export function formatLastLogin(value: string | null) {
   });
 }
 
-/** Local bootstrap account seeded with system_admin — role/scope must stay fixed. */
+/** Local bootstrap account seeded with super_admin — role/scope must stay fixed. */
 export function isBootstrapSuperAdmin(
   user: Pick<ManagedUser, "isLocalBootstrap" | "roles">,
 ): boolean {
-  return user.isLocalBootstrap && user.roles.some((r) => r.roleKey === "system_admin");
+  return user.isLocalBootstrap && user.roles.some((r) => r.roleKey === "super_admin");
 }

@@ -5,6 +5,7 @@ import {
   assertEntityInScope,
   hasPermission,
 } from "../authz/authorization.service.js";
+import { mysqlDateTimeToIso } from "../lib/mysql-datetime.js";
 import { writeAuditLog } from "./audit.service.js";
 import {
   applyFacultySubstitution,
@@ -134,10 +135,10 @@ function mapRequest(row: RequestRow) {
     status: row.status,
     currentStepId: row.current_step_id == null ? null : Number(row.current_step_id),
     currentStepOrder: row.current_step_order == null ? null : Number(row.current_step_order),
-    submittedAt: row.submitted_at,
-    closedAt: row.closed_at,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
+    submittedAt: mysqlDateTimeToIso(row.submitted_at),
+    closedAt: mysqlDateTimeToIso(row.closed_at),
+    createdAt: mysqlDateTimeToIso(row.created_at),
+    updatedAt: mysqlDateTimeToIso(row.updated_at),
     typeKey: row.type_key ?? null,
     typeLabel: row.type_label ?? null,
     requesterName: row.requester_name ?? null,
@@ -264,7 +265,7 @@ function mapAction(row: ActionRow) {
     stepOrder: row.step_order == null ? null : Number(row.step_order),
     comment: row.comment,
     metadata,
-    createdAt: row.created_at,
+    createdAt: mysqlDateTimeToIso(row.created_at),
   };
 }
 
@@ -300,6 +301,68 @@ function assignmentMatchesScope(
   if (assignment.collegeId !== collegeId) return false;
   if (branchId == null) return true;
   return assignment.branchId == null || assignment.branchId === branchId;
+}
+
+/** Global super admin — can see and act on any pending request across the institute. */
+export function isRequestSupervisor(authz: AuthzContext): boolean {
+  if (!authz.scope.isGlobal || !hasPermission(authz, "request.approve")) return false;
+  return authz.roleKeys.includes("super_admin");
+}
+
+function actionVerb(action: string) {
+  switch (action) {
+    case "approved":
+      return "Approved";
+    case "escalated":
+      return "Escalated";
+    case "rejected":
+      return "Rejected";
+    case "returned":
+      return "Returned";
+    case "submitted":
+      return "Submitted";
+    case "created":
+      return "Created";
+    case "cancelled":
+      return "Cancelled";
+    default:
+      return action.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+  }
+}
+
+function buildActionMetadata(
+  authz: AuthzContext,
+  step: ReturnType<typeof mapStep>,
+  action: string,
+  request: { collegeId: number | null; branchId: number | null },
+  extra?: Record<string, unknown>,
+) {
+  const meta: Record<string, unknown> = {
+    ...extra,
+    stepKey: step.stepKey,
+    stepLabel: step.label,
+  };
+
+  const supervisor = isRequestSupervisor(authz);
+  const roleAligned = isEligibleApproverForStep(authz, step, request);
+  const verb = actionVerb(action);
+
+  if (supervisor && !roleAligned) {
+    return {
+      ...meta,
+      supervisorOverride: true,
+      approverRoleKey: "super_admin",
+      approverRoleLabel: "Super Admin",
+      displayLabel: `${verb} by Super Admin`,
+      displayStage: step.label,
+    };
+  }
+
+  if (["approved", "escalated", "rejected", "returned"].includes(action)) {
+    return { ...meta, displayLabel: `${verb} — ${step.label}` };
+  }
+
+  return Object.keys(meta).length > 2 ? meta : undefined;
 }
 
 export function isEligibleApproverForStep(
@@ -463,7 +526,8 @@ function resolveRequesterScope(
 
 export async function listRequestTypes() {
   const rows = await queryAcademic<RequestTypeRow[]>(
-    `SELECT id, type_key, label, description FROM ap_request_types WHERE is_active = 1 ORDER BY label`,
+    `SELECT id, type_key, label, description FROM ap_request_types WHERE is_active = 1 AND type_key = ? ORDER BY label`,
+    [SUBSTITUTION_TYPE_KEY],
   );
   return rows.map((row) => ({
     id: Number(row.id),
@@ -508,25 +572,29 @@ export async function listRequests(
   } else if (filter === "pending") {
     if (!hasPermission(authz, "request.approve")) return [];
     const pending = mapped.filter((row) => row.status === "pending_approval");
-    const eligible: typeof mapped = [];
-    for (const request of pending) {
-      if (!request.currentStepId) continue;
-      const stepRows = await queryAcademic<StepRow[]>(
-        `SELECT * FROM ap_request_workflow_steps WHERE id = ? LIMIT 1`,
-        [request.currentStepId],
-      );
-      const step = stepRows[0] ? mapStep(stepRows[0]) : null;
-      if (!step) continue;
-      if (
-        isEligibleApproverForStep(authz, step, {
-          collegeId: request.collegeId,
-          branchId: request.branchId,
-        })
-      ) {
-        eligible.push(request);
+    if (isRequestSupervisor(authz)) {
+      filtered = pending;
+    } else {
+      const eligible: typeof mapped = [];
+      for (const request of pending) {
+        if (!request.currentStepId) continue;
+        const stepRows = await queryAcademic<StepRow[]>(
+          `SELECT * FROM ap_request_workflow_steps WHERE id = ? LIMIT 1`,
+          [request.currentStepId],
+        );
+        const step = stepRows[0] ? mapStep(stepRows[0]) : null;
+        if (!step) continue;
+        if (
+          isEligibleApproverForStep(authz, step, {
+            collegeId: request.collegeId,
+            branchId: request.branchId,
+          })
+        ) {
+          eligible.push(request);
+        }
       }
+      filtered = eligible;
     }
-    filtered = eligible;
   } else if (!(authz.scope.isGlobal || hasPermission(authz, "request.workflow.manage"))) {
     filtered = mapped.filter((request) => {
       try {
@@ -594,13 +662,15 @@ export async function getRequestDetail(authz: AuthzContext, requestId: number) {
 
   const steps = await loadWorkflowSteps(request.workflowId);
   const currentStep = steps.find((step) => step.id === request.currentStepId) ?? null;
+  const supervisor = isRequestSupervisor(authz);
   const canApprove =
     request.status === "pending_approval" &&
     currentStep != null &&
-    isEligibleApproverForStep(authz, currentStep, {
-      collegeId: request.collegeId,
-      branchId: request.branchId,
-    });
+    (supervisor ||
+      isEligibleApproverForStep(authz, currentStep, {
+        collegeId: request.collegeId,
+        branchId: request.branchId,
+      }));
 
   const actionRows = await queryAcademic<ActionRow[]>(
     `
@@ -630,7 +700,8 @@ export async function getRequestDetail(authz: AuthzContext, requestId: number) {
     canApprove,
     canReject: canApprove,
     canReturn: canApprove,
-    canEscalate: canApprove && Boolean(currentStep?.allowEscalate),
+    canEscalate:
+      canApprove && (supervisor || Boolean(currentStep?.allowEscalate)),
     canCancel:
       request.requesterUserId === authz.userId &&
       ["draft", "returned", "pending_approval"].includes(request.status),
@@ -650,6 +721,9 @@ export async function createRequestDraft(
   ipAddress?: string | null,
 ) {
   if (!hasPermission(authz, "request.create")) fail(403, "Forbidden");
+  if (input.typeKey !== SUBSTITUTION_TYPE_KEY) {
+    fail(400, "Only faculty substitution requests are supported");
+  }
 
   const typeRows = await queryAcademic<RequestTypeRow[]>(
     `SELECT * FROM ap_request_types WHERE type_key = ? AND is_active = 1 LIMIT 1`,
@@ -853,6 +927,8 @@ async function advanceOrComplete(
   scope: { collegeId: number | null; branchId: number | null },
   ipAddress?: string | null,
 ) {
+  const actionMeta = buildActionMetadata(authz, currentStep, action, scope);
+
   if (currentStep.isFinal) {
     await finalizeApprovedRequest(requestId, authz, ipAddress);
     await executeAcademic(
@@ -869,6 +945,7 @@ async function advanceOrComplete(
       stepOrder: currentStep.stepOrder,
       comment,
       scope,
+      metadata: actionMeta,
       ipAddress,
     });
     await auditSubstitutionLifecycle(
@@ -897,6 +974,7 @@ async function advanceOrComplete(
       stepOrder: currentStep.stepOrder,
       comment,
       scope,
+      metadata: actionMeta,
       ipAddress,
     });
     await auditSubstitutionLifecycle(
@@ -915,11 +993,15 @@ async function advanceOrComplete(
     action,
     fromStatus: "pending_approval",
     toStatus: "pending_approval",
-    stepId: nextStep.id,
-    stepOrder: nextStep.stepOrder,
+    stepId: currentStep.id,
+    stepOrder: currentStep.stepOrder,
     comment,
     scope,
-    metadata: { previousStepId: currentStep.id, stepKey: nextStep.stepKey, stepLabel: nextStep.label },
+    metadata: buildActionMetadata(authz, currentStep, action, scope, {
+      nextStepId: nextStep.id,
+      nextStepKey: nextStep.stepKey,
+      nextStepLabel: nextStep.label,
+    }),
     ipAddress,
   });
 }
@@ -977,6 +1059,10 @@ export async function rejectRequest(
       collegeId: detail.request.collegeId,
       branchId: detail.request.branchId,
     },
+    metadata: buildActionMetadata(authz, detail.currentStep, "rejected", {
+      collegeId: detail.request.collegeId,
+      branchId: detail.request.branchId,
+    }),
     ipAddress,
   });
   await auditSubstitutionLifecycle(
@@ -1015,6 +1101,10 @@ export async function returnRequest(
       collegeId: detail.request.collegeId,
       branchId: detail.request.branchId,
     },
+    metadata: buildActionMetadata(authz, detail.currentStep, "returned", {
+      collegeId: detail.request.collegeId,
+      branchId: detail.request.branchId,
+    }),
     ipAddress,
   });
   await auditSubstitutionLifecycle(

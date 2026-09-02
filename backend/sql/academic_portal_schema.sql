@@ -342,14 +342,11 @@ CREATE TABLE IF NOT EXISTS ap_audit_logs (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 INSERT INTO ap_roles (role_key, label, description) VALUES
-  ('management', 'Management', 'Full dashboard visibility'),
-  ('principal', 'Principal', 'Institution oversight'),
-  ('academic_admin', 'Academic Administrator', 'Timetable publish and configs'),
+  ('super_admin', 'Super Admin', 'Full portal administration and integrations'),
+  ('principal', 'Principal', 'Institution oversight and approvals'),
+  ('vice_principal', 'Vice Principal', 'Academic operations and request workflow oversight'),
   ('hod', 'Head of Department', 'Department timetable and workload'),
-  ('faculty', 'Faculty', 'Own timetable and attendance posting'),
-  ('exam_cell', 'Examination Cell', 'Exam command center'),
-  ('auditor', 'Auditor', 'Read-only audit access'),
-  ('system_admin', 'System Administrator', 'Roles and integrations')
+  ('staff', 'Staff', 'Own timetable, attendance posting, and requests')
 ON DUPLICATE KEY UPDATE label = VALUES(label);
 
 -- Dynamic RBAC (see migrate-rbac-permissions.ts for full seed of ap_permissions / ap_role_permissions)

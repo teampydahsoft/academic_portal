@@ -6,6 +6,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { isSuperAdminUser } from "@/lib/teaching-scope";
 import { apiFetch } from "@/lib/api";
 import { RequestListFiltersBar } from "./RequestListFiltersBar";
 import { RequestListSkeleton } from "./RequestListSkeleton";
@@ -19,7 +20,8 @@ import { summarizeMine } from "./utils";
 import type { RequestSummary } from "./types";
 
 export function MyRequestsView() {
-  const { hasPermission } = useAuth();
+  const { hasPermission, authorization } = useAuth();
+  const superAdminUser = isSuperAdminUser(authorization);
   const canCreate = hasPermission("request.create");
   const canApprove = hasPermission("request.approve");
 
@@ -34,7 +36,8 @@ export function MyRequestsView() {
       setLoading(true);
       setError(false);
       try {
-        const response = await apiFetch("/requests?filter=mine", { cache: "no-store" });
+        const filter = superAdminUser ? "all" : "mine";
+        const response = await apiFetch(`/requests?filter=${filter}`, { cache: "no-store" });
         const body = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error("failed");
         if (!cancelled) setItems((body as { data: RequestSummary[] }).data ?? []);
@@ -51,7 +54,7 @@ export function MyRequestsView() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [superAdminUser]);
 
   const filterOptions = useMemo(() => requestFilterOptions(items), [items]);
   const filteredItems = useMemo(
@@ -63,8 +66,12 @@ export function MyRequestsView() {
   return (
     <div className="min-w-0">
       <PageHeader
-        title="My Requests"
-        description="Track requests you have submitted and their approval status."
+        title={superAdminUser ? "All Requests" : "My Requests"}
+        description={
+          superAdminUser
+            ? "Institute-wide requests across all statuses and requesters."
+            : "Track requests you have submitted and their approval status."
+        }
         actions={
           <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
             {canApprove ? (
@@ -130,7 +137,6 @@ export function MyRequestsView() {
           <RequestListFiltersBar
             filters={filters}
             onChange={setFilters}
-            typeOptions={filterOptions.types}
             collegeOptions={filterOptions.colleges}
             branchOptions={filterOptions.branches}
           />
@@ -147,6 +153,7 @@ export function MyRequestsView() {
           ) : (
         <RequestTable
           items={filteredItems}
+          showRequester={superAdminUser}
           renderActions={(item) => (
             <Link href={`/requests/${item.id}`}>
               <Button size="sm" variant="secondary">

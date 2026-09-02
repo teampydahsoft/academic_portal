@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/Button";
 import { useAcademicContext } from "@/components/layout/AcademicProvider";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { apiFetch } from "@/lib/api";
-import { isTeachingStaffOnly } from "@/lib/teaching-scope";
+import { isTeachingStaffOnly, isSuperAdminUser } from "@/lib/teaching-scope";
 import {
   BarChart,
   Bar,
@@ -77,6 +77,7 @@ export function DashboardView() {
   const { user, authorization, hasAnyPermission, hasPermission } = useAuth();
   const { filters } = useAcademicContext();
   const teachingStaffOnly = isTeachingStaffOnly(authorization);
+  const superAdminUser = isSuperAdminUser(authorization);
 
   const canDashboard = hasAnyPermission("dashboard.view") && !teachingStaffOnly;
   const canAttendance = hasAnyPermission("attendance.view", "attendance.post");
@@ -307,7 +308,7 @@ export function DashboardView() {
     if (roleLabels.some((r) => r.includes("principal") || r.includes("director"))) {
       return "Here's what's happening in your college today.";
     }
-    if (roleLabels.some((r) => r.includes("faculty"))) {
+    if (roleLabels.some((r) => r.includes("staff") || r.includes("faculty"))) {
       return "Here's what's happening in your classes today.";
     }
     
@@ -601,6 +602,7 @@ export function DashboardView() {
               canView={canRequests}
               canCreate={canRequestCreate}
               canApprove={canRequestApprove}
+              superAdminUser={superAdminUser}
             />
           ) : null}
 
@@ -742,7 +744,7 @@ export function DashboardView() {
               {canRequests && (
                 <Link href="/requests">
                   <Button variant="secondary" className="w-full justify-start text-sm bg-slate-50 hover:bg-slate-100 border-0">
-                    My Requests
+                    {superAdminUser ? "All Requests" : "My Requests"}
                   </Button>
                 </Link>
               )}

@@ -1,7 +1,6 @@
 import type { RequestStatus, RequestSummary } from "./types";
 
 export type RequestListFilters = {
-  typeKey: string;
   status: string;
   sessionDate: string;
   collegeId: string;
@@ -9,7 +8,6 @@ export type RequestListFilters = {
 };
 
 export const DEFAULT_REQUEST_LIST_FILTERS: RequestListFilters = {
-  typeKey: "all",
   status: "all",
   sessionDate: "",
   collegeId: "all",
@@ -21,7 +19,6 @@ export function filterRequestSummaries(
   filters: RequestListFilters,
 ): RequestSummary[] {
   return items.filter((item) => {
-    if (filters.typeKey !== "all" && item.typeKey !== filters.typeKey) return false;
     if (filters.status !== "all" && item.status !== filters.status) return false;
     if (filters.collegeId !== "all" && String(item.collegeId ?? "") !== filters.collegeId) {
       return false;
@@ -38,14 +35,10 @@ export function filterRequestSummaries(
 }
 
 export function requestFilterOptions(items: RequestSummary[]) {
-  const typeKeys = new Map<string, string>();
   const colleges = new Map<number, string>();
   const branches = new Map<number, string>();
 
   for (const item of items) {
-    if (item.typeKey) {
-      typeKeys.set(item.typeKey, item.typeLabel ?? item.typeKey);
-    }
     if (item.collegeId != null) {
       colleges.set(item.collegeId, item.collegeName ?? `College ${item.collegeId}`);
     }
@@ -55,9 +48,6 @@ export function requestFilterOptions(items: RequestSummary[]) {
   }
 
   return {
-    types: Array.from(typeKeys.entries())
-      .map(([typeKey, label]) => ({ typeKey, label }))
-      .sort((a, b) => a.label.localeCompare(b.label)),
     colleges: Array.from(colleges.entries())
       .map(([id, name]) => ({ id, name }))
       .sort((a, b) => a.name.localeCompare(b.name)),

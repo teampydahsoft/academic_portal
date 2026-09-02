@@ -28,7 +28,7 @@ export const SUPER_ADMIN_SEED = {
   name: "Super Admin",
   username: "superadmin",
   email: "superadmin@academic.local",
-  roleKey: "system_admin",
+  roleKey: "super_admin",
   /**
    * Resolved from env (AP_SUPERADMIN_PASSWORD). Dev-only default lives in env.ts.
    * Never log this value.
@@ -488,7 +488,7 @@ export async function loginWithCredentials(input: {
 export const loginWithHrmsIdentity = loginWithCredentials;
 
 /**
- * Upsert the global Super Admin bootstrap account and assign system_admin.
+ * Upsert the global Super Admin bootstrap account and assign super_admin.
  * Password is stored only as bcrypt hash on ap_users for this account.
  */
 export async function seedSuperAdmin(password = SUPER_ADMIN_SEED.password) {

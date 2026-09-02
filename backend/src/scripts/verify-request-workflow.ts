@@ -75,7 +75,7 @@ async function ensureRolePermission(roleKey: string, permissionKey: string) {
 
 async function ensureRequestPermissions() {
   for (const permission of ["request.view", "request.create"] as const) {
-    await ensureRolePermission("faculty", permission);
+    await ensureRolePermission("staff", permission);
   }
   for (const permission of ["request.view", "request.create", "request.approve"] as const) {
     await ensureRolePermission("hod", permission);
@@ -178,11 +178,11 @@ async function main() {
   const outsiderUser = "req_outsider_tmp";
   const otherCollegeUser = "req_other_college_tmp";
 
-  await createUser(staffUser, "faculty", COLLEGE_A, BRANCH_A);
+  await createUser(staffUser, "staff", COLLEGE_A, BRANCH_A);
   await createUser(hodUserA, "hod", COLLEGE_A, BRANCH_A);
   await createUser(hodUserB, "hod", COLLEGE_A, BRANCH_B);
-  await createUser(outsiderUser, "faculty", COLLEGE_A, BRANCH_B);
-  await createUser(otherCollegeUser, "faculty", COLLEGE_B, BRANCH_B);
+  await createUser(outsiderUser, "staff", COLLEGE_A, BRANCH_B);
+  await createUser(otherCollegeUser, "staff", COLLEGE_B, BRANCH_B);
 
   const staffCookie = await login(staffUser);
   const hodACookie = await login(hodUserA);

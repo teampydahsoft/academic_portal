@@ -304,7 +304,7 @@ export function RolesPermissionsPanel({ canManage }: Props) {
   function openDeleteDialog() {
     if (!selected || !canManage) return;
 
-    if (selected.roleKey === "system_admin") {
+    if (selected.roleKey === "super_admin") {
       setDeleteDialog({ role: selected, mode: "protected" });
       return;
     }
@@ -461,7 +461,7 @@ export function RolesPermissionsPanel({ canManage }: Props) {
                   {!editingDetails && selected.description ? (
                     <p className="mt-1 text-sm text-slate-600">{selected.description}</p>
                   ) : null}
-                  {selected.assignmentCount > 0 && selected.roleKey !== "system_admin" ? (
+                  {selected.assignmentCount > 0 && selected.roleKey !== "super_admin" ? (
                     <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
                       {Number(selected.activeUserCount ?? 0) > 0 ? (
                         <>
@@ -480,7 +480,7 @@ export function RolesPermissionsPanel({ canManage }: Props) {
                       )}
                     </p>
                   ) : null}
-                  {selected.roleKey === "system_admin" ? (
+                  {selected.roleKey === "super_admin" ? (
                     <p className="mt-2 text-xs text-slate-500">
                       System Administrator cannot be deleted (protects portal admin access). You can
                       edit permissions or deactivate other roles instead.
@@ -502,7 +502,7 @@ export function RolesPermissionsPanel({ canManage }: Props) {
                     <Button variant="secondary" disabled={busy} onClick={() => void toggleActive()}>
                       {selected.isActive ? "Deactivate" : "Activate"}
                     </Button>
-                    {selected.roleKey !== "system_admin" ? (
+                    {selected.roleKey !== "super_admin" ? (
                       <Button
                         variant="secondary"
                         disabled={busy}

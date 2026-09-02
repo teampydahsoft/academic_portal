@@ -216,22 +216,22 @@ async function main() {
     });
     await createEphemeralUser({
       username: examCellA,
-      roleKey: "exam_cell",
+      roleKey: "staff",
       collegeId: Number(collegeA.id),
       branchId: null,
       password,
     });
     await createEphemeralUser({
       username: academicAdminA,
-      roleKey: "academic_admin",
+      roleKey: "vice_principal",
       collegeId: Number(collegeA.id),
       branchId: null,
       password,
     });
 
     const admin = await login(SUPER_ADMIN_SEED.username, SUPER_ADMIN_SEED.password);
-    assert(admin.body.authorization?.scope?.isGlobal === true, "system_admin must remain global");
-    console.log("1. Global system_admin still works");
+    assert(admin.body.authorization?.scope?.isGlobal === true, "super_admin must remain global");
+    console.log("1. Global super_admin still works");
 
     const modules = [
       "/api/command-center/summary",

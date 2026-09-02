@@ -64,13 +64,13 @@ function collegeDraftReady(
 
 export function CreateUserPanel(props: Props) {
   const creatableRoles = useMemo(
-    () => props.roles.filter((r) => r.roleKey !== "system_admin" && r.isActive !== false),
+    () => props.roles.filter((r) => r.roleKey !== "super_admin" && r.isActive !== false),
     [props.roles],
   );
 
   const [importOpen, setImportOpen] = useState(false);
   const [selected, setSelected] = useState<HrmsCandidate | null>(null);
-  const [roleKey, setRoleKey] = useState(creatableRoles[0]?.roleKey ?? "faculty");
+  const [roleKey, setRoleKey] = useState(creatableRoles[0]?.roleKey ?? "staff");
   const [collegeScopes, setCollegeScopes] = useState<Record<number, CollegeScopeDraft>>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -145,7 +145,7 @@ export function CreateUserPanel(props: Props) {
 
   function reset() {
     setSelected(null);
-    setRoleKey(creatableRoles[0]?.roleKey ?? "faculty");
+    setRoleKey(creatableRoles[0]?.roleKey ?? "staff");
     setCollegeScopes({});
     setError(null);
   }

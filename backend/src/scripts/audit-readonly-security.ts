@@ -185,11 +185,11 @@ async function main() {
   }
 
   // Permission denial without creating users: matrix invariants
-  if (ROLE_PERMISSIONS.faculty.includes("timetable.publish")) {
-    note("CRITICAL", "matrix", "Faculty has timetable.publish");
+  if (ROLE_PERMISSIONS.staff.includes("timetable.publish")) {
+    note("CRITICAL", "matrix", "Staff has timetable.publish");
   }
-  if (ROLE_PERMISSIONS.auditor.includes("attendance.post")) {
-    note("CRITICAL", "matrix", "Auditor has attendance.post");
+  if (ROLE_PERMISSIONS.principal.includes("timetable.edit")) {
+    note("CRITICAL", "matrix", "Principal has timetable.edit");
   }
 
   // Scope unit checks (no DB write)

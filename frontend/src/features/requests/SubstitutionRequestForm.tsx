@@ -4,21 +4,17 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
-import { useAcademicContext } from "@/components/layout/AcademicProvider";
 import { useAuth } from "@/components/auth/AuthProvider";
-import { isTeachingStaffOnly } from "@/lib/teaching-scope";
+import { canRaiseRequestForOthers, isStaffOnlyRequester } from "@/lib/teaching-scope";
 import { apiFetch } from "@/lib/api";
 
-type PeriodOption = {
+type ClassOption = {
+  timetableEntryId: number;
   timingSlotId: number;
   slotLabel: string;
   startTime: string;
   endTime: string;
   subjectName: string | null;
-};
-
-type MyClassOption = PeriodOption & {
-  timetableEntryId: number;
   sectionName: string;
   batch: string;
   collegeId: number;
@@ -27,6 +23,26 @@ type MyClassOption = PeriodOption & {
   yearOfStudy: number | null;
   semesterNumber: number | null;
   academicYear: string;
+  facultyName?: string | null;
+  facultyHrmsId?: string | null;
+};
+
+type EmployeeOption = {
+  staffLinkId: number;
+  name: string;
+  hrmsEmployeeId: string;
+  employeeCode: string | null;
+  division: string | null;
+  department: string | null;
+  college: string | null;
+};
+
+type EmployeeSearchResponse = {
+  data: EmployeeOption[];
+  filterOptions?: {
+    divisions: string[];
+    departments: string[];
+  };
 };
 
 type ResolvedClass = {
@@ -72,14 +88,21 @@ const inputClass =
 export function SubstitutionRequestForm({ onCancel }: Props) {
   const router = useRouter();
   const { authorization } = useAuth();
-  const teachingStaffOnly = isTeachingStaffOnly(authorization);
-  const { filters, masters } = useAcademicContext();
+  const staffOnly = isStaffOnlyRequester(authorization);
+  const delegateRequest = canRaiseRequestForOthers(authorization);
 
   const [sessionDate, setSessionDate] = useState("");
-  const [periods, setPeriods] = useState<PeriodOption[]>([]);
-  const [myClasses, setMyClasses] = useState<MyClassOption[]>([]);
-  const [selectedMyClassIndex, setSelectedMyClassIndex] = useState<number | "">("");
-  const [timingSlotId, setTimingSlotId] = useState<number | "">("");
+  const [employeeSearch, setEmployeeSearch] = useState("");
+  const [employeeSearchDraft, setEmployeeSearchDraft] = useState("");
+  const [divisionFilter, setDivisionFilter] = useState("all");
+  const [departmentFilter, setDepartmentFilter] = useState("all");
+  const [divisionOptions, setDivisionOptions] = useState<string[]>([]);
+  const [departmentOptions, setDepartmentOptions] = useState<string[]>([]);
+  const [employeeOptions, setEmployeeOptions] = useState<EmployeeOption[]>([]);
+  const [searchingEmployees, setSearchingEmployees] = useState(false);
+  const [selectedEmployee, setSelectedEmployee] = useState<EmployeeOption | null>(null);
+  const [classes, setClasses] = useState<ClassOption[]>([]);
+  const [selectedClassIndex, setSelectedClassIndex] = useState<number | "">("");
   const [resolvedClass, setResolvedClass] = useState<ResolvedClass | null>(null);
   const [resolvingClass, setResolvingClass] = useState(false);
   const [facultySearch, setFacultySearch] = useState("");
@@ -90,156 +113,129 @@ export function SubstitutionRequestForm({ onCancel }: Props) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const selectedMyClass =
-    teachingStaffOnly && selectedMyClassIndex !== ""
-      ? myClasses[selectedMyClassIndex] ?? null
-      : null;
+  const selectedClass =
+    selectedClassIndex !== "" ? classes[selectedClassIndex] ?? null : null;
 
-  const adminScope = useMemo(() => {
-    if (teachingStaffOnly) return null;
-    return {
-      collegeId: filters.collegeId !== "all" ? Number(filters.collegeId) : null,
-      courseId: filters.courseId !== "all" ? Number(filters.courseId) : null,
-      branchId: filters.branchId !== "all" ? Number(filters.branchId) : null,
-      batch: filters.batch !== "all" ? String(filters.batch) : null,
-      year: filters.year !== "all" ? Number(filters.year) : null,
-      semester: filters.semester !== "all" ? Number(filters.semester) : null,
-      section: filters.section !== "all" ? String(filters.section) : null,
-      academicYear: filters.academicYear || null,
-    };
-  }, [
-    teachingStaffOnly,
-    filters.collegeId,
-    filters.courseId,
-    filters.branchId,
-    filters.batch,
-    filters.year,
-    filters.semester,
-    filters.section,
-    filters.academicYear,
-  ]);
-
-  const adminScopeReady = Boolean(
-    adminScope?.collegeId &&
-      adminScope.courseId &&
-      adminScope.branchId &&
-      adminScope.batch &&
-      adminScope.section &&
-      adminScope.year != null &&
-      adminScope.semester != null,
-  );
-
-  const classSelectionReady = teachingStaffOnly
-    ? selectedMyClass != null
-    : adminScopeReady && typeof timingSlotId === "number";
+  const classSelectionReady = Boolean(sessionDate && selectedClass);
 
   useEffect(() => {
-    if (!teachingStaffOnly) return;
-    if (!sessionDate) {
-      setMyClasses([]);
+    const timer = window.setTimeout(() => {
+      setEmployeeSearch(employeeSearchDraft.trim());
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [employeeSearchDraft]);
+
+  useEffect(() => {
+    if (!delegateRequest) return;
+    if (employeeSearch.length > 0 && employeeSearch.length < 2) {
+      setEmployeeOptions([]);
       return;
     }
+
     let cancelled = false;
-    void apiFetch(`/faculty-substitutions/my-classes?sessionDate=${sessionDate}`, {
-      cache: "no-store",
-    })
-      .then(async (res) => {
+    const timer = window.setTimeout(() => {
+      setSearchingEmployees(true);
+      const params = new URLSearchParams();
+      if (employeeSearch.length >= 2) params.set("search", employeeSearch);
+      if (divisionFilter !== "all") params.set("division", divisionFilter);
+      if (departmentFilter !== "all") params.set("department", departmentFilter);
+
+      void apiFetch(`/faculty-substitutions/employee-search?${params}`, { cache: "no-store" })
+        .then(async (res) => {
+          const body = (await res.json().catch(() => ({}))) as EmployeeSearchResponse;
+          if (cancelled) return;
+          if (!res.ok) {
+            setEmployeeOptions([]);
+            return;
+          }
+          setEmployeeOptions(body.data ?? []);
+          if (body.filterOptions) {
+            setDivisionOptions(body.filterOptions.divisions ?? []);
+            setDepartmentOptions(body.filterOptions.departments ?? []);
+          }
+        })
+        .catch(() => {
+          if (!cancelled) setEmployeeOptions([]);
+        })
+        .finally(() => {
+          if (!cancelled) setSearchingEmployees(false);
+        });
+    }, employeeSearch.length >= 2 ? 300 : 0);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [delegateRequest, employeeSearch, divisionFilter, departmentFilter]);
+
+  const departmentChoices = useMemo(() => {
+    if (departmentOptions.length > 0) return departmentOptions;
+    return [...new Set(employeeOptions.map((row) => row.department).filter(Boolean) as string[])].sort();
+  }, [departmentOptions, employeeOptions]);
+
+  useEffect(() => {
+    if (!sessionDate) {
+      setClasses([]);
+      return;
+    }
+
+    let cancelled = false;
+    const load = async () => {
+      try {
+        if (staffOnly) {
+          const res = await apiFetch(
+            `/faculty-substitutions/my-classes?sessionDate=${sessionDate}`,
+            { cache: "no-store" },
+          );
+          const body = await res.json().catch(() => ({}));
+          if (cancelled) return;
+          setClasses(res.ok ? ((body as { data: ClassOption[] }).data ?? []) : []);
+          return;
+        }
+
+        if (!selectedEmployee) {
+          setClasses([]);
+          return;
+        }
+
+        const res = await apiFetch(
+          `/faculty-substitutions/staff-classes?sessionDate=${sessionDate}&staffLinkId=${selectedEmployee.staffLinkId}`,
+          { cache: "no-store" },
+        );
         const body = await res.json().catch(() => ({}));
         if (cancelled) return;
-        setMyClasses(res.ok ? ((body as { data: MyClassOption[] }).data ?? []) : []);
-      })
-      .catch(() => {
-        if (!cancelled) setMyClasses([]);
-      });
-    return () => {
-      cancelled = true;
+        setClasses(res.ok ? ((body as { data: ClassOption[] }).data ?? []) : []);
+      } catch {
+        if (!cancelled) setClasses([]);
+      }
     };
-  }, [teachingStaffOnly, sessionDate]);
 
-  useEffect(() => {
-    if (teachingStaffOnly || !adminScopeReady || !sessionDate || !adminScope) {
-      setPeriods([]);
-      return;
-    }
-    let cancelled = false;
-    const params = new URLSearchParams({
-      sessionDate,
-      collegeId: String(adminScope.collegeId),
-      courseId: String(adminScope.courseId),
-      branchId: String(adminScope.branchId),
-      batch: adminScope.batch!,
-      sectionName: adminScope.section!,
-      yearOfStudy: String(adminScope.year),
-      semesterNumber: String(adminScope.semester),
-    });
-    if (adminScope.academicYear) params.set("academicYear", adminScope.academicYear);
-    void apiFetch(`/faculty-substitutions/periods?${params}`, { cache: "no-store" })
-      .then(async (res) => {
-        const body = await res.json().catch(() => ({}));
-        if (cancelled || !res.ok) return;
-        setPeriods((body as { data: PeriodOption[] }).data ?? []);
-      })
-      .catch(() => undefined);
+    void load();
     return () => {
       cancelled = true;
     };
-  }, [
-    teachingStaffOnly,
-    adminScopeReady,
-    sessionDate,
-    adminScope?.collegeId,
-    adminScope?.courseId,
-    adminScope?.branchId,
-    adminScope?.batch,
-    adminScope?.section,
-    adminScope?.year,
-    adminScope?.semester,
-    adminScope?.academicYear,
-  ]);
+  }, [staffOnly, sessionDate, selectedEmployee]);
 
   const resolveClass = useCallback(async () => {
-    if (!sessionDate || !classSelectionReady) return null;
-
-    let payload: Record<string, unknown> | null = null;
-    if (teachingStaffOnly && selectedMyClass) {
-      payload = { sessionDate, timetableEntryId: selectedMyClass.timetableEntryId };
-    } else if (!teachingStaffOnly && adminScope && typeof timingSlotId === "number") {
-      payload = {
-        sessionDate,
-        collegeId: adminScope.collegeId,
-        courseId: adminScope.courseId,
-        branchId: adminScope.branchId,
-        batch: adminScope.batch,
-        yearOfStudy: adminScope.year,
-        semesterNumber: adminScope.semester,
-        sectionName: adminScope.section,
-        timingSlotId,
-        academicYear: adminScope.academicYear,
-      };
-    }
-    if (!payload) return null;
+    if (!sessionDate || !selectedClass) return null;
 
     const response = await apiFetch("/faculty-substitutions/resolve-class", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({
+        sessionDate,
+        timetableEntryId: selectedClass.timetableEntryId,
+      }),
     });
     const body = await response.json().catch(() => ({}));
     if (!response.ok) {
       throw new Error((body as { message?: string }).message ?? "Could not resolve class");
     }
     return body as ResolvedClass;
-  }, [
-    sessionDate,
-    classSelectionReady,
-    teachingStaffOnly,
-    selectedMyClass,
-    adminScope,
-    timingSlotId,
-  ]);
+  }, [sessionDate, selectedClass]);
 
   useEffect(() => {
-    if (!classSelectionReady || !sessionDate) {
+    if (!classSelectionReady) {
       setResolvedClass(null);
       setReplacementStaffLinkId("");
       setFacultyOptions([]);
@@ -321,6 +317,27 @@ export function SubstitutionRequestForm({ onCancel }: Props) {
     };
   }, [resolvedClass, sessionDate, facultySearch]);
 
+  function resetClassSelection() {
+    setSelectedClassIndex("");
+    setResolvedClass(null);
+    setReplacementStaffLinkId("");
+    setFacultyOptions([]);
+    setFacultySearch("");
+  }
+
+  function selectEmployee(employee: EmployeeOption) {
+    setSelectedEmployee(employee);
+    setEmployeeSearchDraft(employee.name);
+    setEmployeeSearch(employee.name);
+    resetClassSelection();
+  }
+
+  function formatEmployeeMeta(employee: EmployeeOption) {
+    return [employee.division, employee.department, employee.college, employee.hrmsEmployeeId]
+      .filter(Boolean)
+      .join(" • ");
+  }
+
   async function submitRequest() {
     if (!resolvedClass || !replacementStaffLinkId || !reason.trim()) {
       setError("Select a replacement faculty and provide a reason.");
@@ -387,10 +404,140 @@ export function SubstitutionRequestForm({ onCancel }: Props) {
     >
       <div className="space-y-5">
         <p className="text-sm text-slate-600">
-          {teachingStaffOnly
-            ? "Pick your class, search for a replacement faculty across the institute, and submit."
-            : "Complete all details below. Use academic filters in the header for scope."}
+          {staffOnly
+            ? "Pick your class, search for a replacement faculty, and submit."
+            : "Search the employee who needs substitution, pick their class on the selected date, then choose a replacement faculty."}
         </p>
+
+        {delegateRequest ? (
+          <div className="space-y-3 rounded-lg border border-border bg-slate-50 p-4">
+            <div>
+              <p className="text-sm font-medium text-navy-900">Employee (faculty)</p>
+              <p className="mt-1 text-xs text-slate-500">
+                Browse linked faculty or narrow by division, department, and name.
+              </p>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-3">
+              <label className="block text-sm">
+                <span className="mb-1 block text-xs font-medium text-slate-600">Division</span>
+                <select
+                  value={divisionFilter}
+                  onChange={(e) => {
+                    setDivisionFilter(e.target.value);
+                    setDepartmentFilter("all");
+                    if (selectedEmployee) {
+                      setSelectedEmployee(null);
+                      resetClassSelection();
+                    }
+                  }}
+                  className={inputClass}
+                >
+                  <option value="all">All divisions</option>
+                  {divisionOptions.map((division) => (
+                    <option key={division} value={division}>
+                      {division}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="block text-sm">
+                <span className="mb-1 block text-xs font-medium text-slate-600">Department</span>
+                <select
+                  value={departmentFilter}
+                  onChange={(e) => {
+                    setDepartmentFilter(e.target.value);
+                    if (selectedEmployee) {
+                      setSelectedEmployee(null);
+                      resetClassSelection();
+                    }
+                  }}
+                  className={inputClass}
+                >
+                  <option value="all">All departments</option>
+                  {departmentChoices.map((department) => (
+                    <option key={department} value={department}>
+                      {department}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="block text-sm sm:col-span-1">
+                <span className="mb-1 block text-xs font-medium text-slate-600">Search</span>
+                <input
+                  value={employeeSearchDraft}
+                  onChange={(e) => {
+                    setEmployeeSearchDraft(e.target.value);
+                    if (selectedEmployee && e.target.value !== selectedEmployee.name) {
+                      setSelectedEmployee(null);
+                      resetClassSelection();
+                    }
+                  }}
+                  className={inputClass}
+                  placeholder="Name, employee ID, department…"
+                />
+              </label>
+            </div>
+
+            {searchingEmployees ? (
+              <p className="text-xs text-slate-500">Loading staff…</p>
+            ) : null}
+
+            <div className="overflow-hidden rounded-md border border-border bg-white">
+              <div className="hidden grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.8fr)] gap-3 border-b border-border bg-slate-100 px-3 py-2 text-xs font-medium uppercase tracking-wide text-slate-600 sm:grid">
+                <span>Name</span>
+                <span>Division</span>
+                <span>Department</span>
+                <span>Employee ID</span>
+              </div>
+              <div className="max-h-56 overflow-y-auto">
+                {employeeOptions.length === 0 && !searchingEmployees ? (
+                  <p className="px-3 py-4 text-sm text-slate-500">
+                    {employeeSearch.length > 0 && employeeSearch.length < 2
+                      ? "Type at least 2 characters to search by name."
+                      : "No linked faculty match the current filters."}
+                  </p>
+                ) : null}
+                {employeeOptions.map((employee) => {
+                  const selected = selectedEmployee?.staffLinkId === employee.staffLinkId;
+                  return (
+                    <button
+                      key={employee.staffLinkId}
+                      type="button"
+                      onClick={() => selectEmployee(employee)}
+                      className={`grid w-full gap-1 border-b border-border px-3 py-3 text-left text-sm last:border-0 sm:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,0.8fr)] sm:items-center sm:gap-3 ${
+                        selected ? "bg-brand-50" : "hover:bg-slate-50"
+                      }`}
+                    >
+                      <span className="font-medium text-navy-900">{employee.name}</span>
+                      <span className="text-xs text-slate-600 sm:text-sm">
+                        <span className="font-medium text-slate-500 sm:hidden">Division: </span>
+                        {employee.division ?? "—"}
+                      </span>
+                      <span className="text-xs text-slate-600 sm:text-sm">
+                        <span className="font-medium text-slate-500 sm:hidden">Department: </span>
+                        {employee.department ?? "—"}
+                      </span>
+                      <span className="text-xs text-slate-500 sm:text-sm">
+                        <span className="font-medium text-slate-500 sm:hidden">ID: </span>
+                        {employee.hrmsEmployeeId}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {selectedEmployee ? (
+              <p className="text-xs text-success">
+                Selected: <strong>{selectedEmployee.name}</strong>
+                {formatEmployeeMeta(selectedEmployee) ? ` · ${formatEmployeeMeta(selectedEmployee)}` : ""}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
 
         <div className="grid gap-4 sm:grid-cols-2">
           <label className="block text-sm">
@@ -400,64 +547,48 @@ export function SubstitutionRequestForm({ onCancel }: Props) {
               value={sessionDate}
               onChange={(e) => {
                 setSessionDate(e.target.value);
-                setTimingSlotId("");
-                setSelectedMyClassIndex("");
+                resetClassSelection();
               }}
               className={inputClass}
+              disabled={delegateRequest && !selectedEmployee}
             />
           </label>
 
-          {teachingStaffOnly ? (
-            <label className="block text-sm">
-              <span className="mb-1 block font-medium text-navy-900">Your class</span>
-              <select
-                value={selectedMyClassIndex === "" ? "" : String(selectedMyClassIndex)}
-                onChange={(e) => {
-                  const index = e.target.value === "" ? "" : Number(e.target.value);
-                  setSelectedMyClassIndex(index);
-                  if (index !== "" && myClasses[index]) {
-                    setTimingSlotId(myClasses[index]!.timingSlotId);
-                  } else {
-                    setTimingSlotId("");
-                  }
-                }}
-                className={inputClass}
-                disabled={!myClasses.length}
-              >
-                <option value="">Select your class…</option>
-                {myClasses.map((item, index) => (
-                  <option key={`${item.timetableEntryId}-${item.timingSlotId}`} value={index}>
-                    {item.slotLabel} ({item.startTime}–{item.endTime}) — {item.subjectName ?? "Class"}
-                    {item.sectionName && item.sectionName !== "—"
-                      ? ` • Section ${item.sectionName}`
-                      : ""}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : (
-            <label className="block text-sm">
-              <span className="mb-1 block font-medium text-navy-900">Period</span>
-              <select
-                value={timingSlotId}
-                onChange={(e) => setTimingSlotId(e.target.value ? Number(e.target.value) : "")}
-                className={inputClass}
-                disabled={!periods.length}
-              >
-                <option value="">Select period…</option>
-                {periods.map((period) => (
-                  <option key={period.timingSlotId} value={period.timingSlotId}>
-                    {period.slotLabel} ({period.startTime}–{period.endTime})
-                    {period.subjectName ? ` — ${period.subjectName}` : ""}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
+          <label className="block text-sm">
+            <span className="mb-1 block font-medium text-navy-900">
+              {staffOnly ? "Your class" : "Class to substitute"}
+            </span>
+            <select
+              value={selectedClassIndex === "" ? "" : String(selectedClassIndex)}
+              onChange={(e) => {
+                setSelectedClassIndex(e.target.value === "" ? "" : Number(e.target.value));
+              }}
+              className={inputClass}
+              disabled={!classes.length || (delegateRequest && !selectedEmployee)}
+            >
+              <option value="">
+                {delegateRequest && !selectedEmployee
+                  ? "Select employee first…"
+                  : "Select class…"}
+              </option>
+              {classes.map((item, index) => (
+                <option key={`${item.timetableEntryId}-${item.timingSlotId}`} value={index}>
+                  {item.slotLabel} ({item.startTime}–{item.endTime}) — {item.subjectName ?? "Class"}
+                  {item.sectionName && item.sectionName !== "—"
+                    ? ` • Section ${item.sectionName}`
+                    : ""}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
 
-        {sessionDate && teachingStaffOnly && myClasses.length === 0 ? (
-          <p className="text-sm text-warning">You have no assigned classes on this date.</p>
+        {sessionDate && classes.length === 0 && (staffOnly || selectedEmployee) ? (
+          <p className="text-sm text-warning">
+            {staffOnly
+              ? "You have no assigned classes on this date."
+              : "This employee has no assigned classes on this date."}
+          </p>
         ) : null}
 
         {resolvingClass ? (
@@ -533,7 +664,7 @@ export function SubstitutionRequestForm({ onCancel }: Props) {
                     </span>
                   </div>
                   <p className="mt-1 text-xs text-slate-500">
-                    {[faculty.department, faculty.college, faculty.hrmsEmployeeId]
+                    {[faculty.division, faculty.department, faculty.college, faculty.hrmsEmployeeId]
                       .filter(Boolean)
                       .join(" • ")}
                   </p>
@@ -553,7 +684,7 @@ export function SubstitutionRequestForm({ onCancel }: Props) {
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
                 className="min-h-24 w-full rounded-md border border-border px-3 py-2 text-sm outline-none focus:border-navy-800"
-                placeholder="Why do you need a substitution?"
+                placeholder="Why is a substitution needed?"
               />
             </label>
 
@@ -566,9 +697,6 @@ export function SubstitutionRequestForm({ onCancel }: Props) {
         ) : null}
 
         {error ? <p className="text-sm text-critical">{error}</p> : null}
-        {!teachingStaffOnly && !masters ? (
-          <p className="text-xs text-slate-500">Loading academic masters…</p>
-        ) : null}
 
         <div className="flex flex-col gap-2 border-t border-border pt-4 sm:flex-row">
           <Button className="w-full sm:w-auto" disabled={!canSubmit} onClick={() => void submitRequest()}>

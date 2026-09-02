@@ -10,10 +10,10 @@ import {
   UserRound,
   X,
 } from "lucide-react";
-import { NAV_GROUPS, filterNavGroups } from "@/lib/navigation";
+import { NAV_GROUPS, filterNavGroups, navItemForPath, navLabelForItem } from "@/lib/navigation";
 import { cn } from "@/lib/cn";
 import { useAuth } from "@/components/auth/AuthProvider";
-import { isTeachingStaffOnly } from "@/lib/teaching-scope";
+import { isTeachingStaffOnly, isSuperAdminUser } from "@/lib/teaching-scope";
 import { Button } from "@/components/ui/Button";
 import { apiFetch } from "@/lib/api";
 
@@ -31,10 +31,15 @@ export function Sidebar({ open, collapsed, onClose, onToggleCollapsed }: Props) 
   const [profileOpen, setProfileOpen] = useState(false);
 
   const teachingStaffOnly = isTeachingStaffOnly(authorization);
+  const superAdminUser = isSuperAdminUser(authorization);
 
   const groups = useMemo(
-    () => filterNavGroups(NAV_GROUPS, hasAnyPermission, { teachingStaffOnly }),
-    [hasAnyPermission, teachingStaffOnly],
+    () =>
+      filterNavGroups(NAV_GROUPS, hasAnyPermission, {
+        teachingStaffOnly,
+        superAdminUser,
+      }),
+    [hasAnyPermission, teachingStaffOnly, superAdminUser],
   );
 
   const roleLabel = useMemo(() => {
@@ -123,14 +128,14 @@ export function Sidebar({ open, collapsed, onClose, onToggleCollapsed }: Props) 
               )}
               <ul className="space-y-0.5">
                 {group.items.map((item) => {
-                  const active =
-                    pathname === item.href || pathname.startsWith(`${item.href}/`);
+                  const active = navItemForPath(pathname)?.href === item.href;
                   const Icon = item.icon;
+                  const label = navLabelForItem(item, { superAdminUser });
                   return (
                     <li key={item.href}>
                       <Link
                         href={item.href}
-                        title={collapsed ? item.label : undefined}
+                        title={collapsed ? label : undefined}
                         onClick={onClose}
                         className={cn(
                           "group relative flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] font-medium transition-colors",
@@ -151,7 +156,7 @@ export function Sidebar({ open, collapsed, onClose, onToggleCollapsed }: Props) 
                               : "text-sidebar-muted group-hover:text-sidebar-foreground",
                           )}
                         />
-                        {!collapsed ? <span className="truncate">{item.label}</span> : null}
+                        {!collapsed ? <span className="truncate">{label}</span> : null}
                       </Link>
                     </li>
                   );

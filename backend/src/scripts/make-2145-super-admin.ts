@@ -1,5 +1,5 @@
 /**
- * Make HRMS employee 2145 (PENKEY TEJA) an Academic Portal Super Admin (system_admin, global).
+ * Make HRMS employee 2145 (PENKEY TEJA) an Academic Portal Super Admin (super_admin, global).
  */
 import "dotenv/config";
 import type { RowDataPacket } from "mysql2";
@@ -42,7 +42,7 @@ async function main() {
     }
     const linked = await linkHrmsUser({
       hrmsUserId: teja.hrmsUserId,
-      roleKey: "system_admin",
+      roleKey: "super_admin",
       scopes: [{ collegeId: null, branchId: null }],
       actorUserId,
     });
@@ -50,10 +50,10 @@ async function main() {
     console.log(`Linked employee 2145 as portal user #${userId} (${linked.name})`);
   }
 
-  // Ensure system_admin global (and only that for this request — keep other roles if any? User asked for super admin)
+  // Ensure super_admin global (and only that for this request — keep other roles if any? User asked for super admin)
   await replaceUserRoles({
     userId,
-    assignments: [{ roleKey: "system_admin", collegeId: null, branchId: null }],
+    assignments: [{ roleKey: "super_admin", collegeId: null, branchId: null }],
     actorUserId,
   });
 
@@ -80,7 +80,7 @@ async function main() {
       2,
     ),
   );
-  console.log("\nOK — Emp 2145 is now Academic Portal Super Admin (system_admin, global).");
+  console.log("\nOK — Emp 2145 is now Academic Portal Super Admin (super_admin, global).");
   console.log(
     "They sign in with HRMS email/employee id + HRMS password once an HRMS login exists for them.",
   );

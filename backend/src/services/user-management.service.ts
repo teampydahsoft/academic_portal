@@ -144,7 +144,7 @@ function fail(status: number, message: string): never {
 function isBootstrapSuperAdminUser(
   user: Pick<ManagedUserDetail, "isLocalBootstrap" | "roles">,
 ): boolean {
-  return user.isLocalBootstrap && user.roles.some((r) => r.roleKey === "system_admin");
+  return user.isLocalBootstrap && user.roles.some((r) => r.roleKey === "super_admin");
 }
 
 function assertBootstrapSuperAdminRolesLocked(

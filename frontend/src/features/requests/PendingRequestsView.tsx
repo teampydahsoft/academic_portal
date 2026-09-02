@@ -6,6 +6,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { useAuth } from "@/components/auth/AuthProvider";
+import { isSuperAdminUser } from "@/lib/teaching-scope";
 import { apiFetch } from "@/lib/api";
 import { RequestActionPanel } from "./RequestActionPanel";
 import { RequestListSkeleton } from "./RequestListSkeleton";
@@ -13,8 +14,11 @@ import { RequestTable } from "./RequestTable";
 import type { RequestDetailResponse, RequestSummary } from "./types";
 
 export function PendingRequestsView() {
-  const { hasPermission } = useAuth();
+  const { hasPermission, authorization } = useAuth();
   const canApprove = hasPermission("request.approve");
+  const canView = hasPermission("request.view");
+  const canCreate = hasPermission("request.create");
+  const superAdminUser = isSuperAdminUser(authorization);
 
   const [items, setItems] = useState<RequestSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -87,17 +91,50 @@ export function PendingRequestsView() {
     }
   }
 
+  const headerActions = (
+    <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+      {canView ? (
+        <Link href="/requests" className="w-full sm:w-auto">
+          <Button size="sm" variant="secondary" className="w-full">
+            {superAdminUser ? "All requests" : "My requests"}
+          </Button>
+        </Link>
+      ) : (
+        <Link href="/dashboard" className="w-full sm:w-auto">
+          <Button size="sm" variant="secondary" className="w-full">
+            Back to dashboard
+          </Button>
+        </Link>
+      )}
+      {canCreate ? (
+        <Link href="/requests/new" className="w-full sm:w-auto">
+          <Button size="sm" className="w-full">
+            Create request
+          </Button>
+        </Link>
+      ) : null}
+    </div>
+  );
+
   if (!canApprove) {
     return (
       <EmptyState
         title="Approval inbox unavailable"
         description="You do not have permission to approve requests in the current scope."
         action={
-          <Link href="/requests">
-            <Button size="sm" variant="secondary">
-              Back to my requests
-            </Button>
-          </Link>
+          canView ? (
+            <Link href="/requests">
+              <Button size="sm" variant="secondary">
+                Back to my requests
+              </Button>
+            </Link>
+          ) : (
+            <Link href="/dashboard">
+              <Button size="sm" variant="secondary">
+                Back to dashboard
+              </Button>
+            </Link>
+          )
         }
       />
     );
@@ -106,15 +143,13 @@ export function PendingRequestsView() {
   return (
     <div className="min-w-0">
       <PageHeader
-        title="Pending Requests"
-        description="Requests awaiting your action based on the configured workflow and your scope."
-        actions={
-          <Link href="/requests">
-            <Button size="sm" variant="secondary">
-              My requests
-            </Button>
-          </Link>
+        title={superAdminUser ? "All Pending Requests" : "Pending Requests"}
+        description={
+          superAdminUser
+            ? "Institute-wide requests awaiting approval. As Super Admin you can approve, reject, return, or escalate any pending request."
+            : "Requests awaiting your action based on the configured workflow and your scope."
         }
+        actions={headerActions}
       />
 
       {loading ? (
@@ -126,8 +161,16 @@ export function PendingRequestsView() {
         />
       ) : items.length === 0 ? (
         <EmptyState
-          title="No requests are currently pending your approval"
-          description="When a request matches your permissions and scope, it will appear here."
+          title={
+            superAdminUser
+              ? "No requests are currently pending approval"
+              : "No requests are currently pending your approval"
+          }
+          description={
+            superAdminUser
+              ? "When staff submit requests that enter the approval workflow, they will appear here."
+              : "When a request matches your permissions and scope, it will appear here."
+          }
         />
       ) : (
         <RequestTable
@@ -135,7 +178,7 @@ export function PendingRequestsView() {
           showRequester
           renderActions={(item) => (
             <>
-              <Link href={`/requests/${item.id}`}>
+              <Link href={`/requests/${item.id}?from=pending`}>
                 <Button size="sm" variant="secondary" className="w-full sm:w-auto">
                   View
                 </Button>
@@ -153,7 +196,6 @@ export function PendingRequestsView() {
           <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg border border-border bg-white p-4 shadow-xl">
             <div className="mb-4 flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <p className="text-xs text-slate-500">{detail.request.typeLabel}</p>
                 <h2 className="break-words text-base font-semibold text-navy-900">
                   {detail.request.title}
                 </h2>

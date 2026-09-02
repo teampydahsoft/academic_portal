@@ -7,8 +7,10 @@ import {
 } from "../db/pools.js";
 import type { AuthzContext } from "../authz/authorization.service.js";
 import {
-  shouldRestrictToOwnTeachingLoad,
-} from "../authz/faculty-self-scope.js";
+  canRaiseSubstitutionForOthers,
+  mustRaiseOwnSubstitutionOnly,
+} from "../authz/substitution-request-scope.js";
+import { allowedCollegeNames } from "../authz/academic-entity-scope.js";
 import { listFaculty } from "./faculty.service.js";
 import {
   assertEntityInScope,
@@ -301,11 +303,11 @@ async function assertOwnClassForSubstitution(authz: AuthzContext, facultyStaffLi
   if (!facultyStaffLinkId) {
     fail(400, "Selected class has no assigned faculty in the published timetable");
   }
-  if (shouldRestrictToOwnTeachingLoad(authz)) {
-    const requesterStaffLinkId = await resolveRequesterStaffLinkId(authz.userId);
-    if (!requesterStaffLinkId || Number(facultyStaffLinkId) !== requesterStaffLinkId) {
-      fail(403, "You can only request substitution for your own assigned classes");
-    }
+  if (canRaiseSubstitutionForOthers(authz)) return;
+
+  const requesterStaffLinkId = await resolveRequesterStaffLinkId(authz.userId);
+  if (!requesterStaffLinkId || Number(facultyStaffLinkId) !== requesterStaffLinkId) {
+    fail(403, "You can only request substitution for your own assigned classes");
   }
 }
 
@@ -593,18 +595,8 @@ export async function listTimingSlotsForSubstitution(
   }));
 }
 
-/** Published classes assigned to the logged-in faculty on a given date (for substitution requests). */
-export async function listMySubstitutionClasses(authz: AuthzContext, sessionDate: string) {
-  if (!hasPermission(authz, "request.create")) {
-    fail(403, "Forbidden");
-  }
-  if (!isIsoDate(sessionDate)) fail(400, "sessionDate must be YYYY-MM-DD");
-
-  const staffLinkId = await resolveRequesterStaffLinkId(authz.userId);
-  if (!staffLinkId) {
-    fail(400, "Your account is not linked to a faculty profile");
-  }
-
+/** Published classes assigned to a faculty member on a given date. */
+async function fetchSubstitutionClassesForStaffLink(staffLinkId: number, sessionDate: string) {
   const dayOfWeek = dayCodeFromDate(sessionDate);
   const rows = await queryAcademic<
     (RowDataPacket & {
@@ -622,6 +614,8 @@ export async function listMySubstitutionClasses(authz: AuthzContext, sessionDate
       year_of_study: number | null;
       semester_number: number | null;
       academic_year_label: string;
+      faculty_name: string | null;
+      faculty_hrms_id: string | null;
     })[]
   >(
     `
@@ -639,10 +633,13 @@ export async function listMySubstitutionClasses(authz: AuthzContext, sessionDate
       p.branch_id,
       p.year_of_study,
       p.semester_number,
-      p.academic_year_label
+      p.academic_year_label,
+      sl.display_name AS faculty_name,
+      sl.hrms_employee_id AS faculty_hrms_id
     FROM ap_timetable_entries e
     INNER JOIN ap_timetable_plans p ON p.id = e.plan_id
     INNER JOIN ap_timing_template_slots ts ON ts.id = COALESCE(e.timing_slot_id, e.period_slot_id)
+    LEFT JOIN ap_staff_link sl ON sl.id = e.faculty_staff_link_id
     WHERE p.status = 'published'
       AND e.day_of_week = ?
       AND e.faculty_staff_link_id = ?
@@ -668,7 +665,141 @@ export async function listMySubstitutionClasses(authz: AuthzContext, sessionDate
     yearOfStudy: row.year_of_study != null ? Number(row.year_of_study) : null,
     semesterNumber: row.semester_number != null ? Number(row.semester_number) : null,
     academicYear: row.academic_year_label,
+    facultyStaffLinkId: staffLinkId,
+    facultyName: row.faculty_name,
+    facultyHrmsId: row.faculty_hrms_id,
   }));
+}
+
+export async function searchSubstitutionEmployees(
+  authz: AuthzContext,
+  options: {
+    search?: string;
+    division?: string;
+    department?: string;
+    limit?: number;
+    page?: number;
+  } = {},
+) {
+  if (!hasPermission(authz, "request.create")) fail(403, "Forbidden");
+  if (!canRaiseSubstitutionForOthers(authz)) {
+    fail(403, "Only administrators can search employees for substitution requests");
+  }
+
+  const query = (options.search ?? "").trim();
+  const division = options.division?.trim();
+  const department = options.department?.trim();
+  const hasTextSearch = query.length >= 2;
+
+  if (query.length > 0 && query.length < 2) {
+    fail(400, "Enter at least 2 characters to search employees");
+  }
+
+  const collegeNames = await allowedCollegeNames(authz);
+  const pageSize = Math.min(50, Math.max(1, options.limit ?? 25));
+  const page = Math.max(1, options.page ?? 1);
+
+  const [result, optionSource] = await Promise.all([
+    listFaculty({
+      search: hasTextSearch ? query : undefined,
+      division: division || undefined,
+      department: department || undefined,
+      linkStatus: "linked",
+      collegeNames: collegeNames ?? undefined,
+      page,
+      pageSize,
+    }),
+    listFaculty({
+      linkStatus: "linked",
+      collegeNames: collegeNames ?? undefined,
+      page: 1,
+      pageSize: 10000,
+    }),
+  ]);
+
+  const departmentsForDivision = division
+    ? [
+        ...new Set(
+          optionSource.data
+            .filter((row) => row.division.toLowerCase() === division.toLowerCase())
+            .map((row) => row.department)
+            .filter((name) => name && name !== "—"),
+        ),
+      ].sort()
+    : optionSource.filterOptions.departments.filter((name) => name && name !== "—");
+
+  const data = result.data
+    .filter((row) => row.staffLinkId != null)
+    .map((row) => ({
+      staffLinkId: row.staffLinkId!,
+      name: row.name,
+      hrmsEmployeeId: row.hrmsEmployeeId,
+      employeeCode: row.code !== "—" ? row.code : null,
+      division: row.division !== "—" ? row.division : null,
+      department: row.department !== "—" ? row.department : null,
+      college: row.college !== "—" ? row.college : null,
+    }));
+
+  return {
+    data,
+    filterOptions: {
+      divisions: optionSource.filterOptions.divisions.filter((name) => name && name !== "—"),
+      departments: departmentsForDivision,
+    },
+    pagination: result.pagination,
+  };
+}
+
+export async function listStaffSubstitutionClasses(
+  authz: AuthzContext,
+  sessionDate: string,
+  staffLinkId: number,
+) {
+  if (!hasPermission(authz, "request.create")) fail(403, "Forbidden");
+  if (!isIsoDate(sessionDate)) fail(400, "sessionDate must be YYYY-MM-DD");
+  if (!Number.isFinite(staffLinkId) || staffLinkId <= 0) {
+    fail(400, "staffLinkId is required");
+  }
+
+  if (mustRaiseOwnSubstitutionOnly(authz)) {
+    const ownStaffLinkId = await resolveRequesterStaffLinkId(authz.userId);
+    if (!ownStaffLinkId || Number(staffLinkId) !== ownStaffLinkId) {
+      fail(403, "You can only view your own teaching classes");
+    }
+  }
+
+  const staffRows = await queryAcademic<(RowDataPacket & { id: number })[]>(
+    `SELECT id FROM ap_staff_link WHERE id = ? LIMIT 1`,
+    [staffLinkId],
+  );
+  if (!staffRows[0]) fail(404, "Employee not found");
+
+  const classes = await fetchSubstitutionClassesForStaffLink(staffLinkId, sessionDate);
+  const scoped: typeof classes = [];
+  for (const item of classes) {
+    try {
+      await assertScope(authz, item.collegeId, item.branchId);
+      scoped.push(item);
+    } catch {
+      // skip out-of-scope classes
+    }
+  }
+  return scoped;
+}
+
+/** Published classes assigned to the logged-in faculty on a given date (for substitution requests). */
+export async function listMySubstitutionClasses(authz: AuthzContext, sessionDate: string) {
+  if (!hasPermission(authz, "request.create")) {
+    fail(403, "Forbidden");
+  }
+  if (!isIsoDate(sessionDate)) fail(400, "sessionDate must be YYYY-MM-DD");
+
+  const staffLinkId = await resolveRequesterStaffLinkId(authz.userId);
+  if (!staffLinkId) {
+    fail(400, "Your account is not linked to a faculty profile");
+  }
+
+  return listStaffSubstitutionClasses(authz, sessionDate, staffLinkId);
 }
 
 export async function createSubstitutionDetails(
@@ -700,7 +831,7 @@ export async function createSubstitutionDetails(
 
   const requesterStaffLinkId = await resolveRequesterStaffLinkId(authz.userId);
   if (
-    !authz.scope.isGlobal &&
+    mustRaiseOwnSubstitutionOnly(authz) &&
     requesterStaffLinkId !== assignment.originalFacultyStaffLinkId
   ) {
     fail(403, "You can only request substitution for your own assigned classes");

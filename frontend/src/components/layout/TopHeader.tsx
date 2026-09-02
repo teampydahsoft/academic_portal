@@ -3,18 +3,7 @@
 import { Bell, Menu } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { NAV_GROUPS } from "@/lib/navigation";
-
-function titleFromPath(pathname: string) {
-  for (const group of NAV_GROUPS) {
-    for (const item of group.items) {
-      if (pathname === item.href || pathname.startsWith(`${item.href}/`)) {
-        return item.label;
-      }
-    }
-  }
-  return "Academic Portal";
-}
+import { breadcrumbsForPath } from "@/lib/navigation";
 
 type Props = {
   onMenuClick: () => void;
@@ -22,7 +11,7 @@ type Props = {
 
 export function TopHeader({ onMenuClick }: Props) {
   const pathname = usePathname();
-  const title = titleFromPath(pathname);
+  const breadcrumbs = breadcrumbsForPath(pathname);
 
   return (
     <header className="z-20 shrink-0 border-b border-border bg-card shadow-sm">
@@ -37,8 +26,21 @@ export function TopHeader({ onMenuClick }: Props) {
             <Menu className="h-4 w-4" />
           </button>
           <p className="truncate text-sm text-slate-500">
-            Academic Portal <span className="text-slate-300">/</span>{" "}
-            <span className="font-medium text-slate-700">{title}</span>
+            <Link href="/dashboard" className="hover:text-slate-700">
+              Academic Portal
+            </Link>
+            {breadcrumbs.map((segment, index) => (
+              <span key={`${segment.label}-${index}`}>
+                <span className="text-slate-300"> / </span>
+                {segment.href ? (
+                  <Link href={segment.href} className="font-medium text-slate-700 hover:text-navy-900">
+                    {segment.label}
+                  </Link>
+                ) : (
+                  <span className="font-medium text-slate-700">{segment.label}</span>
+                )}
+              </span>
+            ))}
           </p>
         </div>
 

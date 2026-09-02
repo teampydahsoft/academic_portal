@@ -9,10 +9,12 @@ import {
   createSubstitutionDetails,
   listReplacementFacultyAvailability,
   listMySubstitutionClasses,
+  listStaffSubstitutionClasses,
   listTimingSlotsForSubstitution,
   loadSubstitutionDetailByRequestId,
   resolveClassAssignment,
   resolveClassAssignmentByEntryId,
+  searchSubstitutionEmployees,
 } from "../services/faculty-substitution.service.js";
 
 export const facultySubstitutionRouter = Router();
@@ -101,6 +103,49 @@ facultySubstitutionRouter.get(
       }
       res.json({
         data: await listMySubstitutionClasses(getAuthz(req), sessionDate),
+      });
+    } catch (error) {
+      handleError(error, res, next);
+    }
+  },
+);
+
+facultySubstitutionRouter.get(
+  "/employee-search",
+  requirePermission("request.create"),
+  async (req: AuthedRequest, res, next) => {
+    try {
+      const search = str(req.query.search) ?? str(req.query.q);
+      const division = str(req.query.division);
+      const department = str(req.query.department);
+      res.json(
+        await searchSubstitutionEmployees(getAuthz(req), {
+          search,
+          division,
+          department,
+          limit: num(req.query.limit) ?? 25,
+          page: num(req.query.page) ?? 1,
+        }),
+      );
+    } catch (error) {
+      handleError(error, res, next);
+    }
+  },
+);
+
+facultySubstitutionRouter.get(
+  "/staff-classes",
+  requirePermission("request.create"),
+  async (req: AuthedRequest, res, next) => {
+    try {
+      const sessionDate = str(req.query.sessionDate);
+      const staffLinkId = num(req.query.staffLinkId);
+      if (!sessionDate || !staffLinkId) {
+        res.status(400).json({ message: "sessionDate and staffLinkId are required" });
+        return;
+      }
+      res.json({
+        data: await listStaffSubstitutionClasses(getAuthz(req), sessionDate, staffLinkId),
       });
     } catch (error) {
       handleError(error, res, next);

@@ -45,6 +45,27 @@ export const PERMISSIONS = [
 
 export type Permission = (typeof PERMISSIONS)[number] | (string & {});
 
+/** Canonical portal roles — only these five are active system roles. */
+export const STANDARD_ROLE_KEYS = [
+  "super_admin",
+  "principal",
+  "vice_principal",
+  "hod",
+  "staff",
+] as const;
+
+export type RoleKey = (typeof STANDARD_ROLE_KEYS)[number];
+
+/** @deprecated Legacy role keys remapped by migrate-standard-roles.ts */
+export const LEGACY_ROLE_KEY_MAP: Record<string, RoleKey> = {
+  system_admin: "super_admin",
+  faculty: "staff",
+  management: "vice_principal",
+  academic_admin: "vice_principal",
+  exam_cell: "staff",
+  auditor: "principal",
+};
+
 /** When seeding roles, grant module-specific keys alongside legacy parent keys. */
 export const MODULE_PERMISSION_EXPANSIONS: Partial<Record<Permission, Permission[]>> = {
   "user_management.view": ["roles.view"],
@@ -61,26 +82,11 @@ export function expandModulePermissions(perms: Permission[]): Permission[] {
   return [...set];
 }
 
-export type RoleKey =
-  | "system_admin"
-  | "management"
-  | "principal"
-  | "academic_admin"
-  | "hod"
-  | "faculty"
-  | "exam_cell"
-  | "auditor";
-
 /**
  * Seed reference for roles that may use NULL/NULL global scope.
  * Runtime uses ap_roles.is_global_capable.
  */
-export const GLOBAL_SCOPE_ROLES: RoleKey[] = [
-  "system_admin",
-  "management",
-  "academic_admin",
-  "auditor",
-];
+export const GLOBAL_SCOPE_ROLES: RoleKey[] = ["super_admin"];
 
 const ALL: Permission[] = [...PERMISSIONS];
 
@@ -121,11 +127,31 @@ const VIEW_ACADEMIC: Permission[] = [
 
 /** Seed reference matrix — must match migrated ap_role_permissions for system roles. */
 const ROLE_PERMISSIONS_BASE: Record<RoleKey, Permission[]> = {
-  system_admin: ALL,
+  super_admin: ALL,
 
-  management: [...VIEW_ACADEMIC, "request.view", "request.create", "request.approve", "request.workflow.manage", ...MENTORING_FULL],
+  principal: [
+    "dashboard.view",
+    ...OPERATIONS_VIEW,
+    "students.view",
+    "faculty.view",
+    "my_timetable.view",
+    "timetable.view",
+    "attendance.view",
+    "attendance_analytics.view",
+    "attendance_calendar.view",
+    "workload.view",
+    "examinations.view",
+    "results.view",
+    "catalog.view",
+    "semester_dates.view",
+    "settings.view",
+    "request.view",
+    "request.create",
+    "request.approve",
+    ...MENTORING_FULL,
+  ],
 
-  academic_admin: [
+  vice_principal: [
     "dashboard.view",
     ...OPERATIONS_VIEW,
     "students.view",
@@ -154,28 +180,6 @@ const ROLE_PERMISSIONS_BASE: Record<RoleKey, Permission[]> = {
     ...MENTORING_FULL,
   ],
 
-  principal: [
-    "dashboard.view",
-    ...OPERATIONS_VIEW,
-    "students.view",
-    "faculty.view",
-    "my_timetable.view",
-    "timetable.view",
-    "attendance.view",
-    "attendance_analytics.view",
-    "attendance_calendar.view",
-    "workload.view",
-    "examinations.view",
-    "results.view",
-    "catalog.view",
-    "semester_dates.view",
-    "settings.view",
-    "request.view",
-    "request.create",
-    "request.approve",
-    ...MENTORING_FULL,
-  ],
-
   hod: [
     "dashboard.view",
     ...OPERATIONS_VIEW,
@@ -198,7 +202,7 @@ const ROLE_PERMISSIONS_BASE: Record<RoleKey, Permission[]> = {
   ],
 
   /** Teaching staff — personal dashboard, own timetable, own attendance, requests. */
-  faculty: [
+  staff: [
     "dashboard.view",
     "my_timetable.view",
     "attendance.view",
@@ -207,40 +211,12 @@ const ROLE_PERMISSIONS_BASE: Record<RoleKey, Permission[]> = {
     "request.create",
     ...MENTORING_MENTOR,
   ],
-
-  exam_cell: [
-    "dashboard.view",
-    "students.view",
-    "examinations.view",
-    "results.view",
-    "catalog.view",
-  ],
-
-  auditor: [
-    "dashboard.view",
-    ...OPERATIONS_VIEW,
-    "students.view",
-    "faculty.view",
-    "my_timetable.view",
-    "timetable.view",
-    "attendance.view",
-    "attendance_analytics.view",
-    "attendance_calendar.view",
-    "workload.view",
-    "examinations.view",
-    "results.view",
-    "catalog.view",
-    "semester_dates.view",
-    "settings.view",
-    "request.view",
-    ...MENTORING_VIEW,
-  ],
 };
 
 export const ROLE_PERMISSIONS: Record<RoleKey, Permission[]> = Object.fromEntries(
   (Object.entries(ROLE_PERMISSIONS_BASE) as [RoleKey, Permission[]][]).map(([roleKey, perms]) => [
     roleKey,
-    roleKey === "system_admin" ? perms : expandModulePermissions(perms),
+    roleKey === "super_admin" ? perms : expandModulePermissions(perms),
   ]),
 ) as Record<RoleKey, Permission[]>;
 
@@ -248,12 +224,19 @@ export function isKnownRoleKey(value: string): value is RoleKey {
   return Object.prototype.hasOwnProperty.call(ROLE_PERMISSIONS, value);
 }
 
+export function normalizeRoleKey(value: string): RoleKey | null {
+  if (isKnownRoleKey(value)) return value;
+  const mapped = LEGACY_ROLE_KEY_MAP[value];
+  return mapped ?? null;
+}
+
 /** @deprecated Seed/compat only — runtime uses DB via authorization.service */
 export function permissionsForRoleKeys(roleKeys: string[]): Permission[] {
   const set = new Set<Permission>();
   for (const key of roleKeys) {
-    if (!isKnownRoleKey(key)) continue;
-    for (const permission of ROLE_PERMISSIONS[key]) {
+    const normalized = normalizeRoleKey(key);
+    if (!normalized) continue;
+    for (const permission of ROLE_PERMISSIONS[normalized]) {
       set.add(permission);
     }
   }

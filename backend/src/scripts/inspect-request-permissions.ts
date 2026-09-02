@@ -9,9 +9,9 @@ async function main() {
   console.log(perms);
 
   const role = await queryAcademic<{ id: number; role_key: string }[]>(
-    `SELECT id, role_key FROM ap_roles WHERE role_key = 'system_admin' LIMIT 1`,
+    `SELECT id, role_key FROM ap_roles WHERE role_key = 'super_admin' LIMIT 1`,
   );
-  console.log("\n=== system_admin role ===");
+  console.log("\n=== super_admin role ===");
   console.log(role);
 
   if (role[0]) {
@@ -25,7 +25,7 @@ async function main() {
       `,
       [role[0].id],
     );
-    console.log("\n=== system_admin request permissions in DB ===");
+    console.log("\n=== super_admin request permissions in DB ===");
     console.log(rolePerms);
   }
 
@@ -35,11 +35,11 @@ async function main() {
     FROM ap_users u
     INNER JOIN ap_user_roles ur ON ur.user_id = u.id
     INNER JOIN ap_roles r ON r.id = ur.role_id
-    WHERE r.role_key = 'system_admin'
+    WHERE r.role_key = 'super_admin'
     LIMIT 5
     `,
   );
-  console.log("\n=== users with system_admin ===");
+  console.log("\n=== users with super_admin ===");
   console.log(superUsers);
 
   for (const user of superUsers) {

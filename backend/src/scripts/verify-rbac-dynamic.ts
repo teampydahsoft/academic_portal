@@ -100,7 +100,7 @@ async function main() {
     (admin.body.authorization?.permissions ?? []).includes("timetable.publish"),
     "admin publish from DB",
   );
-  console.log("2. Existing system_admin retains access via DB permissions");
+  console.log("2. Existing super_admin retains access via DB permissions");
 
   // Unauthorized cannot manage roles
   const forbidden = await req("/api/roles", {
@@ -226,13 +226,13 @@ async function main() {
 
     // System role cannot be deleted
     const sys = await queryAcademic<(RowDataPacket & { id: number })[]>(
-      `SELECT id FROM ap_roles WHERE role_key = 'system_admin' LIMIT 1`,
+      `SELECT id FROM ap_roles WHERE role_key = 'super_admin' LIMIT 1`,
     );
     const delSys = await req(`/api/roles/${sys[0].id}`, {
       method: "DELETE",
       cookie: admin.cookie,
     });
-    assert(delSys.status === 400, `delete system_admin expected 400, got ${delSys.status}`);
+    assert(delSys.status === 400, `delete super_admin expected 400, got ${delSys.status}`);
     console.log("11. System roles cannot be deleted");
 
     // Lockout protection

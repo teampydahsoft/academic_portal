@@ -8,6 +8,7 @@ import {
 import { revokeAllSessionsForUser } from "./auth.service.js";
 import { writeAuditLog } from "./audit.service.js";
 import { countActiveWorkflowReferencesForRole } from "./request-workflow-admin.service.js";
+import { STANDARD_ROLE_KEYS } from "../authz/permissions.js";
 
 const PORTAL_ADMIN_PERMISSION_KEYS = [
   "user_management.manage_users",
@@ -176,10 +177,11 @@ export async function listManagedRoles(includeInactive = true): Promise<RoleDeta
       r.created_at, r.updated_at,
       ${ROLE_ASSIGNMENT_COUNTS_SQL}
     FROM ap_roles r
-    WHERE (? = 1 OR r.is_active = 1)
-    ORDER BY r.is_system_role DESC, r.label ASC
+    WHERE r.role_key IN (${STANDARD_ROLE_KEYS.map(() => "?").join(", ")})
+      AND (? = 1 OR r.is_active = 1)
+    ORDER BY FIELD(r.role_key, ${STANDARD_ROLE_KEYS.map(() => "?").join(", ")})
     `,
-    [includeInactive ? 1 : 0],
+    [...STANDARD_ROLE_KEYS, includeInactive ? 1 : 0, ...STANDARD_ROLE_KEYS],
   );
 
   const result: RoleDetailDto[] = [];
@@ -221,7 +223,7 @@ async function countActiveGlobalSystemAdmins(excludeUserId?: number) {
     INNER JOIN ap_permissions p ON p.id = rp.permission_id
     WHERE u.is_active = 1
       AND r.is_active = 1
-      AND r.role_key = 'system_admin'
+      AND r.role_key = 'super_admin'
       AND ur.college_id IS NULL
       AND ur.branch_id IS NULL
       AND ${portalAdminPermissionSql("p")}
@@ -268,50 +270,10 @@ export async function createRole(input: {
   actorUserId: number;
   ipAddress?: string | null;
 }) {
-  const label = text(input.label);
-  if (!label) fail(400, "Role name is required");
-
-  let roleKey = text(input.roleKey)?.toLowerCase() ?? slugifyRoleKey(label);
-  roleKey = roleKey.replace(/[^a-z0-9_]/g, "_");
-  if (!roleKey) fail(400, "Invalid role key");
-
-  const existing = await getRoleMetaByKey(roleKey);
-  if (existing) fail(409, `Role key already exists: ${roleKey}`);
-
-  const inserted = await executeAcademic(
-    `
-    INSERT INTO ap_roles
-      (role_key, label, description, is_system_role, is_active, is_global_capable)
-    VALUES (?, ?, ?, 0, 1, ?)
-    `,
-    [roleKey, label, text(input.description), input.isGlobalCapable ? 1 : 0],
+  fail(
+    400,
+    `Custom roles are disabled. Use one of: ${STANDARD_ROLE_KEYS.join(", ")}`,
   );
-  const roleId = Number(inserted.insertId);
-
-  if (input.permissionKeys?.length) {
-    await setRolePermissionsInternal(roleId, input.permissionKeys, {
-      actorUserId: input.actorUserId,
-      ipAddress: input.ipAddress,
-      skipAuditBundle: true,
-    });
-  }
-
-  await writeAuditLog({
-    actorUserId: input.actorUserId,
-    action: "role.created",
-    entityType: "ap_role",
-    entityId: roleId,
-    newValue: {
-      roleKey,
-      label,
-      isGlobalCapable: Boolean(input.isGlobalCapable),
-      permissionKeys: input.permissionKeys ?? [],
-    },
-    ipAddress: input.ipAddress,
-  });
-
-  invalidateAuthzCache({ all: true });
-  return getManagedRole(roleId);
 }
 
 export async function updateRole(input: {
@@ -334,11 +296,11 @@ export async function updateRole(input: {
   if (!label) fail(400, "Role name is required");
 
   if (
-    existing.roleKey === "system_admin" &&
+    existing.roleKey === "super_admin" &&
     input.isGlobalCapable === false &&
     !input.confirmImpact
   ) {
-    fail(400, "Confirm impact before changing system_admin global capability");
+    fail(400, "Confirm impact before changing super_admin global capability");
   }
 
   await executeAcademic(
@@ -398,18 +360,18 @@ export async function setRoleActiveStatus(input: {
   const existing = await getManagedRole(input.roleId);
   if (!existing) fail(404, "Role not found");
 
-  if (!input.isActive && existing.roleKey === "system_admin") {
+  if (!input.isActive && existing.roleKey === "super_admin") {
     const remaining = await countActiveGlobalSystemAdmins();
-    // Deactivating system_admin role affects all holders
+    // Deactivating super_admin role affects all holders
     if (remaining > 0 && !input.confirmImpact) {
       fail(
         400,
-        "Deactivating system_admin will remove portal administration for its assignees. Pass confirmImpact=true to proceed only if another admin path exists.",
+        "Deactivating super_admin will remove portal administration for its assignees. Pass confirmImpact=true to proceed only if another admin path exists.",
       );
     }
-    // Hard stop if this would leave zero manage_users admins via system_admin
+    // Hard stop if this would leave zero manage_users admins via super_admin
     if (existing.isActive && !input.isActive) {
-      // After deactivation, no system_admin role permissions apply
+      // After deactivation, no super_admin role permissions apply
       const otherAdmins = await queryAcademic<(RowDataPacket & { c: number })[]>(
         `
         SELECT COUNT(DISTINCT u.id) AS c
@@ -461,7 +423,7 @@ export async function deleteRole(input: {
   if (!existing) fail(404, "Role not found");
 
   // Keep the portal administration role — deleting it risks permanent lockout.
-  if (existing.roleKey === "system_admin") {
+  if (existing.roleKey === "super_admin") {
     fail(
       400,
       "System Administrator cannot be deleted. Reassign users or deactivate other roles instead.",
@@ -545,10 +507,10 @@ async function setRolePermissionsInternal(
 ) {
   const uniqueKeys = [...new Set(permissionKeys.map((k) => String(k).trim()).filter(Boolean))];
   if (!uniqueKeys.length) {
-    // Empty permissions — check admin lockout for system_admin
+    // Empty permissions — check admin lockout for super_admin
     const role = await getManagedRole(roleId);
-    if (role?.roleKey === "system_admin") {
-      fail(400, "system_admin cannot have all permissions removed");
+    if (role?.roleKey === "super_admin") {
+      fail(400, "super_admin cannot have all permissions removed");
     }
   }
 

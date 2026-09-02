@@ -1,5 +1,9 @@
 import type { RequestAction, RequestStatus, WorkflowStep } from "./types";
-import { formatRequestDateTime } from "./utils";
+import {
+  formatRequestActionDisplay,
+  formatRequestActionSubtitle,
+  formatRequestDateTime,
+} from "./utils";
 
 type Props = {
   history: RequestAction[];
@@ -8,8 +12,8 @@ type Props = {
   status: RequestStatus;
 };
 
-function actionLabel(action: string) {
-  return action.replaceAll("_", " ");
+function actionLabel(entry: RequestAction, workflowSteps: WorkflowStep[]) {
+  return formatRequestActionDisplay(entry, workflowSteps);
 }
 
 function lifecycleSteps(
@@ -94,11 +98,14 @@ export function RequestTimeline({ history, workflowSteps, currentStepOrder, stat
                       ["approved", "rejected", "escalated"].includes(entry.action),
                     ) && step.stepOrder <= (workflowSteps.at(-1)?.stepOrder ?? 0)
                   : step.stepOrder < currentStepOrder ||
-                    history.some(
-                      (entry) =>
-                        entry.stepOrder === step.stepOrder &&
-                        ["approved", "escalated", "rejected", "returned"].includes(entry.action),
-                    );
+                    history.some((entry) => {
+                      if (!["approved", "escalated", "rejected", "returned"].includes(entry.action)) {
+                        return false;
+                      }
+                      if (entry.stepOrder === step.stepOrder) return true;
+                      const meta = entry.metadata as { stepKey?: string; displayStage?: string } | null;
+                      return meta?.stepKey === step.stepKey || meta?.displayStage === step.label;
+                    });
               const active = step.stepOrder === currentStepOrder && status === "pending_approval";
               return (
                 <li
@@ -127,14 +134,13 @@ export function RequestTimeline({ history, workflowSteps, currentStepOrder, stat
           {history.map((entry) => (
             <li key={entry.id} className="relative border-l-2 border-brand-200 pl-4">
               <div className="flex flex-wrap items-start justify-between gap-2">
-                <p className="text-sm font-medium capitalize text-navy-900">
-                  {actionLabel(entry.action)}
+                <p className="text-sm font-medium text-navy-900">
+                  {actionLabel(entry, workflowSteps)}
                 </p>
                 <p className="text-xs text-slate-500">{formatRequestDateTime(entry.createdAt)}</p>
               </div>
               <p className="text-xs text-slate-500">
-                {entry.actorName ?? "System"}
-                {entry.toStatus ? ` • ${entry.toStatus.replaceAll("_", " ")}` : ""}
+                {formatRequestActionSubtitle(entry, workflowSteps)}
               </p>
               {entry.comment ? (
                 <p className="mt-2 break-words rounded-md bg-white px-3 py-2 text-sm text-slate-700 ring-1 ring-border">

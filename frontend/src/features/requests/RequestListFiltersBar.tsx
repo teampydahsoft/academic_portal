@@ -13,7 +13,6 @@ const selectClassName =
 type Props = {
   filters: RequestListFilters;
   onChange: (filters: RequestListFilters) => void;
-  typeOptions: { typeKey: string; label: string }[];
   collegeOptions: { id: number; name: string }[];
   branchOptions: { id: number; name: string }[];
 };
@@ -21,7 +20,6 @@ type Props = {
 export function RequestListFiltersBar({
   filters,
   onChange,
-  typeOptions,
   collegeOptions,
   branchOptions,
 }: Props) {
@@ -30,7 +28,6 @@ export function RequestListFiltersBar({
   }
 
   const hasActiveFilters =
-    filters.typeKey !== "all" ||
     filters.status !== "all" ||
     filters.sessionDate !== "" ||
     filters.collegeId !== "all" ||
@@ -38,21 +35,6 @@ export function RequestListFiltersBar({
 
   return (
     <FilterBar>
-      <FilterField label="Request type">
-        <select
-          className={selectClassName}
-          value={filters.typeKey}
-          onChange={(event) => update("typeKey", event.target.value)}
-        >
-          <option value="all">All types</option>
-          {typeOptions.map((type) => (
-            <option key={type.typeKey} value={type.typeKey}>
-              {type.label}
-            </option>
-          ))}
-        </select>
-      </FilterField>
-
       <FilterField label="Status">
         <select
           className={selectClassName}

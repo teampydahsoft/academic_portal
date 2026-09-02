@@ -4,6 +4,7 @@ import { executeAcademic, queryAcademic, withAcademicTransaction } from "../db/p
 import type { AuthzContext } from "../authz/authorization.service.js";
 import { hasPermission } from "../authz/authorization.service.js";
 import type { ScopeMode } from "./request-workflow.service.js";
+import { SUBSTITUTION_TYPE_KEY } from "./faculty-substitution.service.js";
 import { writeAuditLog } from "./audit.service.js";
 
 const SCOPE_MODES: ScopeMode[] = [
@@ -316,7 +317,9 @@ export async function listRequestTypesAdmin(authz: AuthzContext) {
     workflowsByType.set(typeId, list);
   }
 
-  return types.map((type) => {
+  return types
+    .filter((type) => type.type_key === SUBSTITUTION_TYPE_KEY)
+    .map((type) => {
     const mapped = mapType(type);
     const typeWorkflows = (workflowsByType.get(mapped.id) ?? []).map((w) => ({
       id: Number(w.id),
@@ -340,38 +343,7 @@ export async function createRequestType(
   ipAddress?: string | null,
 ) {
   assertWorkflowManageAccess(authz);
-  const typeKey = slugify(input.typeKey, 64);
-  const label = input.label?.trim();
-  if (!label) fail(400, "label is required");
-
-  const existing = await queryAcademic<(RowDataPacket & { id: number })[]>(
-    `SELECT id FROM ap_request_types WHERE type_key = ? LIMIT 1`,
-    [typeKey],
-  );
-  if (existing[0]) {
-    fail(409, `Request type "${typeKey}" already exists`);
-  }
-
-  const result = await executeAcademic(
-    `
-    INSERT INTO ap_request_types (type_key, label, description, is_active)
-    VALUES (?, ?, ?, ?)
-    `,
-    [typeKey, label, input.description?.trim() || null, input.isActive === false ? 0 : 1],
-  );
-  const typeId = Number(result.insertId);
-
-  await writeAuditLog({
-    actorUserId: authz.userId,
-    action: "workflow.created",
-    entityType: "ap_request_type",
-    entityId: typeId,
-    newValue: { typeKey, label, isActive: input.isActive !== false },
-    ipAddress,
-  });
-
-  const type = await loadType(typeId);
-  return mapType(type!);
+  fail(400, "Only the faculty substitution request type is supported");
 }
 
 export async function updateRequestType(

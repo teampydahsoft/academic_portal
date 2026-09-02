@@ -24,13 +24,6 @@ type Props = {
 export function RequestTable({ items, showRequester = false, renderActions }: Props) {
   const columns: Column<RequestSummary>[] = [
     {
-      key: "type",
-      header: "Type",
-      render: (item) => (
-        <span className="text-sm text-slate-600">{item.typeLabel ?? item.typeKey ?? "—"}</span>
-      ),
-    },
-    {
       key: "subject",
       header: "Subject / Summary",
       render: (item) => (

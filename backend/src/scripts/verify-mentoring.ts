@@ -125,8 +125,8 @@ async function ensureMentoringPermissions() {
   for (const key of keys) {
     await ensureRolePermission("hod", key);
   }
-  await ensureRolePermission("faculty", "mentoring.view");
-  await ensureRolePermission("faculty", "mentoring.intervene");
+  await ensureRolePermission("staff", "mentoring.view");
+  await ensureRolePermission("staff", "mentoring.intervene");
 }
 
 async function findStudentForTests() {
@@ -208,8 +208,8 @@ async function main() {
   const otherBranchId = await findOtherBranchId(scopeCollegeId, scopeBranchId);
 
   await createUser(hodUser, "hod", scopeCollegeId, scopeBranchId);
-  await createUser(facultyUser, "faculty", scopeCollegeId, scopeBranchId);
-  await createUser(facultyOutsider, "faculty", scopeCollegeId, otherBranchId);
+  await createUser(facultyUser, "staff", scopeCollegeId, scopeBranchId);
+  await createUser(facultyOutsider, "staff", scopeCollegeId, otherBranchId);
 
   const hodCookieScoped = await login(hodUser);
   const facultyCookieScoped = await login(facultyUser);

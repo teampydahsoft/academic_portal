@@ -170,9 +170,9 @@ async function seedDefaultWorkflow() {
     },
     {
       step_order: 3,
-      step_key: "management_review",
-      label: "Management Review",
-      approver_role_key: "management",
+      step_key: "vice_principal_review",
+      label: "Vice Principal Review",
+      approver_role_key: "vice_principal",
       required_permission: "request.approve",
       scope_mode: "global",
       allow_escalate: 0,

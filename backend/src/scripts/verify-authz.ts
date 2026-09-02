@@ -123,36 +123,36 @@ async function main() {
 
   // Pure unit checks (no HTTP)
   assert(
-    !ROLE_PERMISSIONS.faculty.includes("timetable.publish"),
-    "Faculty must not publish timetable",
+    !ROLE_PERMISSIONS.staff.includes("timetable.publish"),
+    "Staff must not publish timetable",
   );
   assert(
-    !ROLE_PERMISSIONS.faculty.includes("user_management.manage_users"),
-    "Faculty must not manage users",
+    !ROLE_PERMISSIONS.staff.includes("user_management.manage_users"),
+    "Staff must not manage users",
   );
   assert(
-    !ROLE_PERMISSIONS.exam_cell.includes("timetable.edit"),
-    "Exam cell must not modify timetable",
+    !ROLE_PERMISSIONS.principal.includes("timetable.edit"),
+    "Principal must not edit timetable drafts",
   );
   assert(
-    !ROLE_PERMISSIONS.auditor.some((p) => p.endsWith(".edit") || p.endsWith(".post") || p.endsWith(".publish") || p.endsWith(".manage_users")),
-    "Auditor must be read-only",
+    !ROLE_PERMISSIONS.vice_principal.includes("user_management.manage_users"),
+    "Vice principal must not manage users",
   );
   console.log("1. Role matrix invariants OK");
 
-  const facultyPerms = permissionsForRoleKeys(["faculty"]);
-  assert(!facultyPerms.includes("timetable.publish"), "Faculty publish blocked in matrix");
-  assert(!facultyPerms.includes("students.view"), "Faculty must not view all students register");
-  assert(!facultyPerms.includes("timetable.view"), "Faculty must use my_timetable.view only");
-  assert(!facultyPerms.includes("workload.view"), "Faculty must not view staff workload");
-  assert(!facultyPerms.includes("catalog.view"), "Faculty must not view curriculum catalog");
-  assert(!facultyPerms.includes("faculty.view"), "Faculty must not view faculty directory");
-  assert(!facultyPerms.includes("pending_exceptions.view"), "Faculty must not view operations queue");
-  assert(!facultyPerms.includes("reports.view"), "Faculty must not view reports hub");
-  assert(!facultyPerms.includes("alerts.view"), "Faculty must not view alerts hub");
-  assert(!facultyPerms.includes("attendance_analytics.view"), "Faculty must not view attendance analytics");
-  assert(facultyPerms.includes("my_timetable.view"), "Faculty must have my_timetable.view");
-  console.log("2. Faculty teaching-staff matrix OK");
+  const staffPerms = permissionsForRoleKeys(["staff"]);
+  assert(!staffPerms.includes("timetable.publish"), "Staff publish blocked in matrix");
+  assert(!staffPerms.includes("students.view"), "Staff must not view all students register");
+  assert(!staffPerms.includes("timetable.view"), "Staff must use my_timetable.view only");
+  assert(!staffPerms.includes("workload.view"), "Staff must not view staff workload");
+  assert(!staffPerms.includes("catalog.view"), "Staff must not view curriculum catalog");
+  assert(!staffPerms.includes("faculty.view"), "Staff must not view faculty directory");
+  assert(!staffPerms.includes("pending_exceptions.view"), "Staff must not view operations queue");
+  assert(!staffPerms.includes("reports.view"), "Staff must not view reports hub");
+  assert(!staffPerms.includes("alerts.view"), "Staff must not view alerts hub");
+  assert(!staffPerms.includes("attendance_analytics.view"), "Staff must not view attendance analytics");
+  assert(staffPerms.includes("my_timetable.view"), "Staff must have my_timetable.view");
+  console.log("2. Staff teaching-staff matrix OK");
 
   const scoped = buildScopeFromAssignments([
     { roleKey: "hod", label: "HOD", collegeId: 1, branchId: 57 },
@@ -206,16 +206,16 @@ async function main() {
   console.log("4. College scope denial OK");
 
   const globalScope = buildScopeFromAssignments([
-    { roleKey: "system_admin", label: "System Admin", collegeId: null, branchId: null },
+    { roleKey: "super_admin", label: "Super Admin", collegeId: null, branchId: null },
   ]);
-  assert(globalScope.isGlobal, "system_admin NULL/NULL is global");
+  assert(globalScope.isGlobal, "super_admin NULL/NULL is global");
   assertEntityInScope(
     {
       userId: 1,
       roles: [],
-      roleKeys: ["system_admin"],
-      permissions: ROLE_PERMISSIONS.system_admin as any[],
-      rolePermissions: ROLE_PERMISSIONS.system_admin as string[],
+      roleKeys: ["super_admin"],
+      permissions: ROLE_PERMISSIONS.super_admin as any[],
+      rolePermissions: ROLE_PERMISSIONS.super_admin as string[],
       directPermissions: [],
       revokedPermissions: [],
       scope: globalScope,
@@ -251,31 +251,23 @@ async function main() {
   assert(allowed.status === 200, `Admin students expected 200, got ${allowed.status}`);
   console.log("9. Authenticated with permission → allowed");
 
-  const facultyUser = "ap_authz_faculty_tmp";
-  const examUser = "ap_authz_exam_tmp";
-  const auditorUser = "ap_authz_auditor_tmp";
+  const staffUser = "ap_authz_staff_tmp";
+  const principalUser = "ap_authz_principal_tmp";
   const hodUser = "ap_authz_hod_tmp";
   const password = "authz-test-pass-123";
 
   try {
     await createEphemeralUser({
-      username: facultyUser,
-      roleKey: "faculty",
+      username: staffUser,
+      roleKey: "staff",
       collegeId: 1,
       branchId: 57,
       password,
     });
     await createEphemeralUser({
-      username: examUser,
-      roleKey: "exam_cell",
+      username: principalUser,
+      roleKey: "principal",
       collegeId: 1,
-      branchId: null,
-      password,
-    });
-    await createEphemeralUser({
-      username: auditorUser,
-      roleKey: "auditor",
-      collegeId: null,
       branchId: null,
       password,
     });
@@ -287,26 +279,26 @@ async function main() {
       password,
     });
 
-    const faculty = await login(facultyUser, password);
+    const staff = await login(staffUser, password);
     const publishDenied = await req("/api/timetables/1/publish", {
       method: "POST",
-      cookie: faculty.cookie,
+      cookie: staff.cookie,
     });
-    assert(publishDenied.status === 403, `Faculty publish expected 403, got ${publishDenied.status}`);
-    console.log("10. Faculty cannot publish timetable → 403");
+    assert(publishDenied.status === 403, `Staff publish expected 403, got ${publishDenied.status}`);
+    console.log("10. Staff cannot publish timetable → 403");
 
     const manageDenied = await req("/api/settings/faculty-display", {
       method: "PUT",
-      cookie: faculty.cookie,
+      cookie: staff.cookie,
       body: JSON.stringify({ enabledGroupIds: [] }),
     });
-    assert(manageDenied.status === 403, `Faculty settings.edit expected 403, got ${manageDenied.status}`);
-    console.log("11. Faculty cannot manage settings/users → 403");
+    assert(manageDenied.status === 403, `Staff settings.edit expected 403, got ${manageDenied.status}`);
+    console.log("11. Staff cannot manage settings/users → 403");
 
-    const exam = await login(examUser, password);
-    const examTimetable = await req("/api/timetables/draft", {
+    const principal = await login(principalUser, password);
+    const principalTimetable = await req("/api/timetables/draft", {
       method: "POST",
-      cookie: exam.cookie,
+      cookie: principal.cookie,
       body: JSON.stringify({
         collegeId: 1,
         courseId: 1,
@@ -317,43 +309,37 @@ async function main() {
         assignments: [],
       }),
     });
-    assert(examTimetable.status === 403, `Exam cell timetable edit expected 403, got ${examTimetable.status}`);
-    console.log("12. Exam Cell cannot modify timetable → 403");
-
-    const auditor = await login(auditorUser, password);
-    const auditorMutation = await req("/api/attendance/sessions/1", {
-      method: "POST",
-      cookie: auditor.cookie,
-      body: JSON.stringify({ students: [] }),
-    });
-    assert(auditorMutation.status === 403, `Auditor mutation expected 403, got ${auditorMutation.status}`);
-    console.log("13. Auditor cannot mutate → 403");
+    assert(
+      principalTimetable.status === 403,
+      `Principal timetable edit expected 403, got ${principalTimetable.status}`,
+    );
+    console.log("12. Principal cannot modify timetable drafts → 403");
 
     const hod = await login(hodUser, password);
     const otherBranch = await req("/api/students?limit=1&collegeId=1&branchId=58", {
       cookie: hod.cookie,
     });
     assert(otherBranch.status === 403, `HOD other branch expected 403, got ${otherBranch.status}`);
-    console.log("14. HOD cannot access another branch → 403");
+    console.log("13. HOD cannot access another branch → 403");
 
     const otherCollege = await req("/api/students?limit=1&collegeId=2", {
       cookie: hod.cookie,
     });
     assert(otherCollege.status === 403, `HOD other college expected 403, got ${otherCollege.status}`);
-    console.log("15. Scoped user cannot access another college → 403");
+    console.log("14. Scoped user cannot access another college → 403");
 
     const attendanceDenied = await req("/api/attendance/sessions?collegeId=2", {
       cookie: hod.cookie,
     });
     assert(attendanceDenied.status === 403, `Attendance scope expected 403, got ${attendanceDenied.status}`);
-    console.log("16. Attendance posting scope enforced → 403");
+    console.log("15. Attendance posting scope enforced → 403");
 
     const resultsDenied = await req("/api/results?collegeId=2", {
       cookie: hod.cookie,
     });
     // hod has no results.view → 403 permission (or scope if they had it)
     assert(resultsDenied.status === 403, `Results for HOD expected 403, got ${resultsDenied.status}`);
-    console.log("17. Results/examinations respect permissions → 403 for HOD");
+    console.log("16. Results/examinations respect permissions → 403 for HOD");
 
     const studentPii = await req("/api/students?limit=1&collegeId=1&branchId=57", {
       cookie: hod.cookie,
@@ -363,7 +349,7 @@ async function main() {
       `Unexpected student list status ${studentPii.status}`,
     );
     if (studentPii.status === 200) {
-      console.log("18. Student list within HOD scope → 200");
+      console.log("17. Student list within HOD scope → 200");
     } else {
       console.log("18. Student list within scope returned 403 (no students / empty scope data) — permission path OK");
     }
@@ -384,9 +370,8 @@ async function main() {
     console.log("19. Authenticated without permission → 403");
     await deleteEphemeralUser(noRoleUser);
   } finally {
-    await deleteEphemeralUser(facultyUser);
-    await deleteEphemeralUser(examUser);
-    await deleteEphemeralUser(auditorUser);
+    await deleteEphemeralUser(staffUser);
+    await deleteEphemeralUser(principalUser);
     await deleteEphemeralUser(hodUser);
   }
 

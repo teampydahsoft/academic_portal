@@ -156,7 +156,7 @@ async function restoreGeneralAcademicSteps(cookie: string, workflowId: number) {
   for (const step of steps) {
     if (!unique.has(step.step_key)) unique.set(step.step_key, step);
   }
-  const seedOrder = ["hod_review", "principal_review", "management_review"];
+  const seedOrder = ["hod_review", "principal_review", "vice_principal_review"];
   const payload = seedOrder
     .map((key) => unique.get(key))
     .filter(Boolean)
@@ -181,17 +181,17 @@ async function restoreGeneralAcademicSteps(cookie: string, workflowId: number) {
 async function main() {
   console.log("=== Request workflow management verification ===\n");
 
-  await ensureRolePermission("management", "request.workflow.manage");
+  await ensureRolePermission("vice_principal", "request.workflow.manage");
 
   const mgrUser = "wf_mgr_tmp";
   const deniedUser = "wf_denied_tmp";
   const staffUser = "wf_staff_tmp";
 
-  await createUser(mgrUser, "management", null, null);
-  await createUser(deniedUser, "faculty", 1, 1);
-  await createUser(staffUser, "faculty", 1, 1);
-  await ensureRolePermission("faculty", "request.view");
-  await ensureRolePermission("faculty", "request.create");
+  await createUser(mgrUser, "vice_principal", null, null);
+  await createUser(deniedUser, "staff", 1, 1);
+  await createUser(staffUser, "staff", 1, 1);
+  await ensureRolePermission("staff", "request.view");
+  await ensureRolePermission("staff", "request.create");
 
   const deniedCookie = await login(deniedUser);
   const mgrCookie = await login(mgrUser);

@@ -137,14 +137,14 @@ async function main() {
       collegeId
         ? {
             hrmsUserId: candidate.hrmsUserId,
-            roleKey: "faculty",
+            roleKey: "staff",
             collegeId,
             branchId: null,
             isActive: true,
           }
         : {
             hrmsUserId: candidate.hrmsUserId,
-            roleKey: "auditor",
+            roleKey: "principal",
             collegeId: null,
             branchId: null,
             isActive: true,
@@ -164,7 +164,7 @@ async function main() {
     cookie: admin.cookie,
     body: JSON.stringify({
       hrmsUserId: candidate.hrmsUserId,
-      roleKey: "faculty",
+      roleKey: "staff",
       collegeId,
       branchId: null,
     }),
@@ -178,7 +178,7 @@ async function main() {
     body: JSON.stringify({
       assignments: collegeId
         ? [{ roleKey: "hod", collegeId, branchId: null }]
-        : [{ roleKey: "auditor", collegeId: null, branchId: null }],
+        : [{ roleKey: "principal", collegeId: null, branchId: null }],
     }),
   });
   assert(rolesPut.status === 200, `Role assignment expected 200, got ${rolesPut.status}`);

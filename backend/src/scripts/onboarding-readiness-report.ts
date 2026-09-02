@@ -38,14 +38,11 @@ function idFromValue(value: unknown): string | null {
 }
 
 type RoleKey =
-  | "system_admin"
-  | "management"
-  | "academic_admin"
+  | "super_admin"
   | "principal"
+  | "vice_principal"
   | "hod"
-  | "faculty"
-  | "exam_cell"
-  | "auditor";
+  | "staff";
 
 type Recommendation = {
   hrmsUserId: string;
@@ -88,7 +85,7 @@ function recommendRole(input: {
   if (/\b(system\s*admin|it\s*admin|software)\b/.test(blob) && /admin|developer|engineer/.test(des)) {
     return {
       role: null,
-      reason: "IT/system titles must not auto-map to system_admin; keep bootstrap Super Admin only",
+      reason: "IT/system titles must not auto-map to super_admin; keep bootstrap Super Admin only",
       confidence: "none",
     };
   }
@@ -98,9 +95,9 @@ function recommendRole(input: {
   }
   if (/\b(vice\s*principal|deputy\s*principal)\b/.test(des)) {
     return {
-      role: "principal",
-      reason: `Vice/Deputy Principal — confirm whether principal role is appropriate: ${input.designation}`,
-      confidence: "medium",
+      role: "vice_principal",
+      reason: `Vice/Deputy Principal designation: ${input.designation}`,
+      confidence: "high",
     };
   }
 
@@ -109,35 +106,35 @@ function recommendRole(input: {
   }
 
   if (/\b(exam\s*cell|controller of examination|coe|examination)\b/.test(blob)) {
-    return { role: "exam_cell", reason: `Exam/COE related designation or department: ${input.designation} / ${input.department}`, confidence: "medium" };
+    return { role: "staff", reason: `Exam/COE related — default to staff pending review: ${input.designation} / ${input.department}`, confidence: "low" };
   }
 
   if (/\b(academic\s*admin|dean academics|dean of academics|academic director)\b/.test(blob)) {
-    return { role: "academic_admin", reason: `Academic administration title: ${input.designation}`, confidence: "medium" };
+    return { role: "vice_principal", reason: `Academic administration title: ${input.designation}`, confidence: "medium" };
   }
 
   if (/\b(management|chairman|chairperson|secretary|correspondent|trustee|ceo|cfo)\b/.test(des)) {
-    return { role: "management", reason: `Management-level designation: ${input.designation}`, confidence: "medium" };
+    return { role: "vice_principal", reason: `Management-level designation: ${input.designation}`, confidence: "medium" };
   }
 
   if (/\b(auditor|internal audit|compliance)\b/.test(blob)) {
-    return { role: "auditor", reason: `Audit/compliance related: ${input.designation}`, confidence: "medium" };
+    return { role: "principal", reason: `Audit/compliance related — principal oversight: ${input.designation}`, confidence: "low" };
   }
 
-  // Faculty: teaching group + common academic designations
+  // Staff: teaching group + common academic designations
   if (
     teaching &&
     /\b(professor|assoc\.?\s*prof|assistant professor|asst\.?\s*prof|lecturer|faculty|teacher|instructor)\b/.test(
       des,
     )
   ) {
-    return { role: "faculty", reason: `Teaching group + academic designation: ${input.designation}`, confidence: "high" };
+    return { role: "staff", reason: `Teaching group + academic designation: ${input.designation}`, confidence: "high" };
   }
 
   if (teaching && des && des !== "—") {
     return {
-      role: "faculty",
-      reason: `Teaching employee group; designation unclear for leadership — faculty candidate only: ${input.designation}`,
+      role: "staff",
+      reason: `Teaching employee group; designation unclear for leadership — staff candidate only: ${input.designation}`,
       confidence: "low",
     };
   }
@@ -355,7 +352,7 @@ async function main() {
       exists: true,
       active: Number(superAdmin.is_active) === 1,
       globalScope: scope.isGlobal,
-      correctRole: assignments.some((a) => a.roleKey === "system_admin" && a.collegeId == null && a.branchId == null),
+      correctRole: assignments.some((a) => a.roleKey === "super_admin" && a.collegeId == null && a.branchId == null),
       userId: Number(superAdmin.id),
       username: superAdmin.username,
       roles: assignments.map((a) => `${a.roleKey}@${a.collegeId ?? "global"}/${a.branchId ?? "all"}`),
@@ -409,14 +406,11 @@ async function main() {
   });
 
   const byRole: Record<string, Recommendation[]> = {
-    system_admin: [],
-    management: [],
-    academic_admin: [],
+    super_admin: [],
     principal: [],
+    vice_principal: [],
     hod: [],
-    faculty: [],
-    exam_cell: [],
-    auditor: [],
+    staff: [],
   };
   for (const r of recommendations) {
     if (r.recommendedRole && (r.confidence === "high" || r.confidence === "medium")) {
@@ -494,7 +488,7 @@ async function main() {
       ]),
     ),
     lowConfidenceFaculty: recommendations
-      .filter((r) => r.recommendedRole === "faculty" && r.confidence === "low" && !r.alreadyLinked)
+      .filter((r) => r.recommendedRole === "staff" && r.confidence === "low" && !r.alreadyLinked)
       .map((r) => ({
         name: r.name,
         employeeId: r.employeeId,
@@ -529,8 +523,8 @@ async function main() {
     developmentTestAccounts: reviewAp.filter((u) => u.flags.length > 0),
     umReadiness,
     recommendedOnboardingOrder: [
-      "1. Confirm Super Admin (already present) — keep as sole system_admin bootstrap",
-      "2. Link 1–2 academic_admin or management (global or multi-college) if titles are unambiguous",
+      "1. Confirm Super Admin (already present) — keep as sole super_admin bootstrap",
+      "2. Link vice principal or principal (global or multi-college) if titles are unambiguous",
       "3. Link Principals per college (college scope only)",
       "4. Link Exam Cell for colleges that run examinations",
       "5. Link HODs with explicit college + branch (always manual branch)",
