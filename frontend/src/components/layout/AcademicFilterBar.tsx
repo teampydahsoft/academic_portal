@@ -47,9 +47,10 @@ export function AcademicFilterBar({ title = "Filters" }: Props) {
   
   const isStudentDetail = pathname.startsWith("/students/") && pathname !== "/students";
   const isMentoringDetail = pathname.startsWith("/mentoring-risks/") && pathname !== "/mentoring-risks";
+  const isAttendanceSession = pathname.startsWith("/attendance-posting/") && pathname !== "/attendance-posting";
   
   // Hide filters on dashboard and detail pages unconditionally
-  const hidden = hiddenOnPath || isDashboard || isStudentDetail || isMentoringDetail;
+  const hidden = hiddenOnPath || isDashboard || isStudentDetail || isMentoringDetail || isAttendanceSession;
   const showSearch =
     pathname === "/students";
   const isMentoringPage =

@@ -245,3 +245,40 @@ select {
     animation: none;
   }
 }
+
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 10mm;
+  }
+  html, body {
+    height: auto !important;
+    min-height: 100% !important;
+    overflow: visible !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    background: white !important;
+  }
+  .print\:hidden {
+    display: none !important;
+  }
+  table {
+    page-break-inside: auto;
+  }
+  tr {
+    page-break-inside: avoid;
+    page-break-after: auto;
+  }
+  td, th {
+    border-color: #94a3b8 !important; /* Darker borders for print */
+  }
+  .border, .border-b, .border-border {
+    border-color: #94a3b8 !important;
+  }
+  
+  /* Scale down slightly to fit portrait width beautifully */
+  body {
+    zoom: 0.85;
+  }
+}
+

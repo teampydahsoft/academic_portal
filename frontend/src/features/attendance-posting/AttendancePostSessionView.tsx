@@ -47,7 +47,14 @@ const markClass: Record<AttendanceMark, string> = {
 };
 
 function normalizeStatus(status: string | null | undefined): AttendanceMark {
-  return status === "present" ? "present" : "absent";
+  return status === "absent" ? "absent" : "present";
+}
+
+function getInitials(name: string) {
+  const parts = name.trim().split(" ");
+  if (parts.length === 0) return "?";
+  if (parts.length === 1) return parts[0].substring(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
 export function AttendancePostSessionView() {
@@ -82,8 +89,13 @@ export function AttendancePostSessionView() {
         if (!cancelled) {
           const data = body as Payload;
           setPayload(data);
+          
+          const sortedStudents = [...data.students].sort((a, b) => 
+            a.admissionNo.localeCompare(b.admissionNo, undefined, { numeric: true, sensitivity: 'base' })
+          );
+          
           setStudents(
-            data.students.map((student) => ({
+            sortedStudents.map((student) => ({
               ...student,
               status: normalizeStatus(student.status),
             })),
@@ -183,115 +195,117 @@ export function AttendancePostSessionView() {
   if (!payload) return null;
 
   return (
-    <div>
-      <PageHeader
-        title={payload.session.subjectName ?? "Class session"}
-        description={`${payload.session.subjectCode ?? "—"} • Section ${payload.session.section ?? "—"} • ${payload.session.date} • ${payload.session.time}${payload.session.slotLabel ? ` • ${payload.session.slotLabel}` : ""}`}
-        actions={
-          <>
-            <Link href="/attendance-posting">
-              <Button variant="secondary">Back</Button>
-            </Link>
-            <Button
-              variant="secondary"
-              onClick={() =>
-                setStudents((prev) => prev.map((s) => ({ ...s, status: "present" })))
-              }
-            >
-              Present All
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={() =>
-                setStudents((prev) => prev.map((s) => ({ ...s, status: "absent" })))
-              }
-            >
-              Absent All
-            </Button>
-            <Button disabled={busy || students.length === 0} onClick={() => void submit()}>
-              {busy ? "Saving…" : payload.posted ? "Update Attendance" : "Submit Attendance"}
-            </Button>
-          </>
-        }
-      />
-
-      <div className="mb-3 flex items-center gap-2">
-        <StatusBadge status={payload.posted ? "Posted" : "Pending"} />
-        <span className="text-sm text-slate-500">
-          {payload.session.facultyName ?? "Faculty unassigned"}
-          {payload.session.roomLabel ? ` • ${payload.session.roomLabel}` : ""}
-        </span>
-      </div>
-
-      {error ? <p className="mb-3 text-sm text-critical">{error}</p> : null}
-      {saved ? <p className="mb-3 text-sm text-success">{saved}</p> : null}
-
-      {payload.posted ? (
-        <label className="mb-4 block max-w-xl text-sm">
-          <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-            Edit reason
-          </span>
-          <input
-            value={editReason}
-            onChange={(e) => setEditReason(e.target.value)}
-            placeholder="Required when updating a posted session"
-            className="h-9 w-full rounded-md border border-border px-3 text-sm outline-none focus:border-navy-800"
-          />
-        </label>
-      ) : null}
-
-      <div className="mb-4 grid gap-3 sm:grid-cols-3">
-        <Card>
-          <p className="text-xs text-slate-500">Students</p>
-          <p className="text-2xl font-semibold text-navy-900">{counts.total}</p>
-        </Card>
-        <Card>
-          <p className="text-xs text-slate-500">Present</p>
-          <p className="text-2xl font-semibold text-success">{counts.present}</p>
-        </Card>
-        <Card>
-          <p className="text-xs text-slate-500">Absent</p>
-          <p className="text-2xl font-semibold text-critical">{counts.absent}</p>
-        </Card>
-      </div>
-
-      <div className="mb-3 max-w-md">
-        <input
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search student"
-          className="h-9 w-full rounded-md border border-border px-3 text-sm outline-none focus:border-navy-800"
+    <div className="flex h-[calc(100vh-8rem)] flex-col">
+      <div className="flex-none pb-2">
+        <PageHeader
+          title={payload.session.subjectName ?? "Class session"}
+          description={`${payload.session.subjectCode ?? "—"} • Section ${payload.session.section ?? "—"} • ${payload.session.date} • ${payload.session.time}${payload.session.slotLabel ? ` • ${payload.session.slotLabel}` : ""}`}
+          actions={
+            <>
+              <Link href="/attendance-posting">
+                <Button variant="secondary" className="px-2 py-1 text-xs">Back</Button>
+              </Link>
+              <Button
+                variant="secondary"
+                className="px-2 py-1 text-xs"
+                onClick={() =>
+                  setStudents((prev) => prev.map((s) => ({ ...s, status: "present" })))
+                }
+              >
+                Present All
+              </Button>
+              <Button
+                variant="secondary"
+                className="px-2 py-1 text-xs"
+                onClick={() =>
+                  setStudents((prev) => prev.map((s) => ({ ...s, status: "absent" })))
+                }
+              >
+                Absent All
+              </Button>
+              <Button className="px-2 py-1 text-xs" disabled={busy || students.length === 0} onClick={() => void submit()}>
+                {busy ? "Saving…" : payload.posted ? "Update" : "Submit"}
+              </Button>
+            </>
+          }
         />
+
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <StatusBadge status={payload.posted ? "Posted" : "Pending"} />
+            <span className="text-xs text-slate-500 truncate max-w-[150px] sm:max-w-none">
+              {payload.session.facultyName ?? "Faculty unassigned"}
+              {payload.session.roomLabel ? ` • ${payload.session.roomLabel}` : ""}
+            </span>
+          </div>
+          <div className="flex items-center gap-3 text-xs font-medium">
+            <span className="text-navy-900">Total: {counts.total}</span>
+            <span className="text-success">P: {counts.present}</span>
+            <span className="text-critical">A: {counts.absent}</span>
+          </div>
+        </div>
+
+        {error ? <p className="mb-2 text-xs text-critical">{error}</p> : null}
+        {saved ? <p className="mb-2 text-xs text-success">{saved}</p> : null}
+
+        {payload.posted ? (
+          <div className="mb-2 max-w-xl">
+            <input
+              value={editReason}
+              onChange={(e) => setEditReason(e.target.value)}
+              placeholder="Edit reason (Required when updating)"
+              className="h-8 w-full rounded-md border border-border px-3 text-xs outline-none focus:border-navy-800"
+            />
+          </div>
+        ) : null}
+
+        <div className="mb-2">
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search student..."
+            className="h-8 w-full rounded-md border border-border px-3 text-xs outline-none focus:border-navy-800 bg-slate-50"
+          />
+        </div>
       </div>
 
-      <Card className="p-0">
+      <Card className="flex-1 overflow-y-auto p-0">
         {filtered.length === 0 ? (
-          <p className="px-4 py-6 text-sm text-slate-500">No students on this roster.</p>
+          <p className="px-4 py-6 text-sm text-slate-500 text-center">No students on this roster.</p>
         ) : (
           <ul className="divide-y divide-border">
             {filtered.map((student) => (
               <li
                 key={student.id}
-                className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+                className="flex items-center justify-between gap-2 px-3 py-2 sm:px-4 sm:py-3 hover:bg-slate-50/50"
               >
-                <div>
-                  <p className="font-medium text-navy-900">{student.name}</p>
-                  <p className="text-xs text-slate-500">{student.admissionNo}</p>
+                <div className="flex items-center gap-3 min-w-0 flex-1">
+                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-navy-100 text-xs font-semibold text-navy-800">
+                    {getInitials(student.name)}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-navy-900" title={student.name}>
+                      {student.name}
+                    </p>
+                    <p className="text-[11px] text-slate-500 font-medium">
+                      {student.admissionNo}
+                    </p>
+                  </div>
                 </div>
-                <div className="flex flex-wrap gap-1.5">
+                <div className="flex shrink-0 items-center rounded-lg border border-border p-0.5 bg-slate-50">
                   {MARKS.map((mark) => (
                     <button
                       key={mark}
                       type="button"
                       onClick={() => setStatus(student.id, mark)}
                       className={cn(
-                        "rounded-md px-2.5 py-1 text-xs font-semibold uppercase",
+                        "rounded-md px-3 py-1.5 text-xs font-bold uppercase transition-colors",
                         student.status === mark
-                          ? markClass[mark]
-                          : "bg-slate-50 text-slate-400",
+                          ? markClass[mark] + " shadow-sm ring-1 ring-black/5"
+                          : "text-slate-500 hover:text-slate-700 hover:bg-slate-100",
                       )}
                     >
-                      {mark}
+                      {mark === "present" ? "P" : "A"}
                     </button>
                   ))}
                 </div>

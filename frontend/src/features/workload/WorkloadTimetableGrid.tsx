@@ -2,6 +2,8 @@
 
 import { useMemo } from "react";
 import { Card } from "@/components/ui/Card";
+import { Button } from "@/components/ui/Button";
+import { Printer } from "lucide-react";
 import { cn } from "@/lib/cn";
 import {
   isNonClassTimingSlot,
@@ -141,10 +143,13 @@ export function WorkloadTimetableGrid({ timetable }: { timetable: FacultyTimetab
             {timetable.periodsPerWeek === 1 ? "" : "s"} / week across all branches
           </p>
         </div>
+        <Button variant="secondary" size="sm" onClick={() => window.print()} className="print:hidden">
+          <Printer className="mr-2 h-4 w-4" /> Download PDF
+        </Button>
       </div>
 
-      <div className="overflow-x-auto rounded-lg border border-border bg-card">
-        <table className="w-full min-w-[980px] table-fixed border-collapse text-sm">
+      <div className="overflow-x-auto print:overflow-visible print:border-0 rounded-lg border border-border bg-card">
+        <table className="w-full min-w-[980px] print:min-w-full table-fixed border-collapse text-sm">
           <colgroup>
             <col style={{ width: "5.5rem" }} />
             {timetable.headerSlots.map((slot) => (

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { Printer } from "lucide-react";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { cn } from "@/lib/cn";
 import { useAcademicContext } from "@/components/layout/AcademicProvider";
@@ -670,19 +671,28 @@ export function TimetablePlannerView() {
                 variant="secondary"
                 disabled={busy}
                 onClick={() => setTimingsOpen(true)}
+                className="print:hidden"
               >
                 {planner?.missingTiming || !planner?.timing
                   ? "Configure Timings"
                   : "Edit Timings"}
               </Button>
             ) : null}
+            <Button
+              variant="secondary"
+              disabled={!planner?.ready || busy}
+              onClick={() => window.print()}
+              className="print:hidden"
+            >
+              <Printer className="mr-2 h-4 w-4" /> Download PDF
+            </Button>
             {canEdit ? (
-              <Button variant="secondary" disabled={!planner?.ready || busy} onClick={() => void saveDraft()}>
+              <Button variant="secondary" disabled={!planner?.ready || busy} onClick={() => void saveDraft()} className="print:hidden">
                 Save Draft
               </Button>
             ) : null}
             {canEdit ? (
-              <Button variant="secondary" disabled={!planner?.ready || busy} onClick={() => void runReview()}>
+              <Button variant="secondary" disabled={!planner?.ready || busy} onClick={() => void runReview()} className="print:hidden">
                 Review
               </Button>
             ) : null}
@@ -690,6 +700,7 @@ export function TimetablePlannerView() {
               <Button
                 disabled={!planner?.ready || busy || publishBlocked}
                 onClick={() => void publish()}
+                className="print:hidden"
               >
                 Publish
               </Button>
@@ -711,19 +722,19 @@ export function TimetablePlannerView() {
       ) : null}
 
       {error ? (
-        <Card className="mb-4">
+        <Card className="mb-4 print:hidden">
           <p className="text-sm text-critical">{error}</p>
         </Card>
       ) : null}
 
       {info ? (
-        <Card className="mb-4 border-brand-200 bg-brand-50/40">
+        <Card className="mb-4 border-brand-200 bg-brand-50/40 print:hidden">
           <p className="text-sm text-navy-900">{info}</p>
         </Card>
       ) : null}
 
       {publishBlocked ? (
-        <Card className="mb-4 border-emerald-200 bg-emerald-50">
+        <Card className="mb-4 border-emerald-200 bg-emerald-50 print:hidden">
           <p className="text-sm font-medium text-navy-900">Timetable already published</p>
           <p className="mt-1 text-sm text-slate-700">
             Plan #{planner?.context.planId ?? "—"}
@@ -734,7 +745,7 @@ export function TimetablePlannerView() {
       ) : null}
 
       {planner?.missingTiming ? (
-        <Card className="mb-4 border-warning/40 bg-amber-50">
+        <Card className="mb-4 border-warning/40 bg-amber-50 print:hidden">
           <h3 className="font-semibold text-navy-900">No timing configured</h3>
           <p className="mt-2 text-sm text-slate-700">
             {planner.message ||
@@ -770,7 +781,7 @@ export function TimetablePlannerView() {
                 {planner.context.studentCount.toLocaleString()} students
               </p>
             </div>
-            <div className="flex flex-col items-end gap-2">
+            <div className="flex flex-col items-end gap-2 print:hidden">
               <Button size="sm" variant="secondary" onClick={() => setTimingsOpen(true)}>
                 Edit Timings
               </Button>
@@ -786,8 +797,8 @@ export function TimetablePlannerView() {
             </div>
           </Card>
 
-          <div className="overflow-x-auto rounded-lg border border-border bg-card">
-            <table className="w-full min-w-[980px] table-fixed border-collapse text-sm">
+          <div className="overflow-x-auto print:overflow-visible print:border-0 rounded-lg border border-border bg-card">
+            <table className="w-full min-w-[980px] print:min-w-full table-fixed border-collapse text-sm">
               <colgroup>
                 <col style={{ width: "5.5rem" }} />
                 {headerSlots.map((slot) => (

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-IP="13.204.83.221"
+DOMAIN="${DOMAIN:-acad.pydah.edu.in}"
 APP="$HOME/academic-portal"
 BE="$APP/backend/.env"
 FE="$APP/frontend/.env.local"
@@ -17,9 +17,10 @@ upsert() {
 
 upsert "$BE" "NODE_ENV" "production"
 upsert "$BE" "PORT" "4000"
-upsert "$BE" "CORS_ORIGIN" "http://${IP}"
-upsert "$BE" "AP_SESSION_SECURE" "false"
-upsert "$FE" "NEXT_PUBLIC_API_BASE_URL" "http://${IP}/api"
+upsert "$BE" "CORS_ORIGIN" "https://${DOMAIN}"
+upsert "$BE" "AP_SESSION_SECURE" "true"
+upsert "$BE" "AP_ALLOW_INSECURE_HTTP" "false"
+upsert "$FE" "NEXT_PUBLIC_API_BASE_URL" "https://${DOMAIN}/api"
 echo "ENV_PATCHED"
 
 cd "$APP/backend"
@@ -31,34 +32,35 @@ npm install
 npm run build
 echo "FRONTEND_BUILT"
 
-sudo tee /etc/nginx/conf.d/academic-portal.conf >/dev/null <<'NGINX'
+# HTTP-only bootstrap. For TLS, run: bash ~/academic-portal/scripts/enable-domain-https.sh
+sudo tee /etc/nginx/conf.d/academic-portal.conf >/dev/null <<NGINX
 server {
     listen 80 default_server;
     listen [::]:80 default_server;
-    server_name _;
+    server_name ${DOMAIN};
     client_max_body_size 20M;
 
     location /api/ {
         proxy_pass http://127.0.0.1:4000/api/;
         proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header Cookie $http_cookie;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header Cookie \$http_cookie;
         proxy_pass_header Set-Cookie;
     }
 
     location / {
         proxy_pass http://127.0.0.1:3000;
         proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_cache_bypass $http_upgrade;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_cache_bypass \$http_upgrade;
     }
 }
 NGINX

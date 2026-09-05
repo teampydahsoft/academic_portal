@@ -1,6 +1,7 @@
 # Lightsail CI/CD setup
 
-Production host (current): `http://13.204.83.221`  
+Production host (current): **https://acad.pydah.edu.in**  
+(Public IP still: `13.204.83.221`)  
 Repo: `https://github.com/teampydahsoft/academic_portal`
 
 CI/CD deploys on every push to `main` (and manual **Run workflow**).
@@ -31,7 +32,7 @@ Repo → **Settings** → **Secrets and variables** → **Actions** → **New re
 
 | Secret name | Value |
 |---|---|
-| `LIGHTSAIL_HOST` | `13.204.83.221` |
+| `LIGHTSAIL_HOST` | `13.204.83.221` (or `acad.pydah.edu.in`) |
 | `LIGHTSAIL_USER` | `ec2-user` |
 | `LIGHTSAIL_SSH_KEY` | Full contents of `LightsailDefaultKey-ap-south-1 (1).pem` (including `BEGIN` / `END` lines) |
 
@@ -51,8 +52,21 @@ In Lightsail → instance → **Networking**:
 
 - **SSH** TCP `22` — open  
 - **HTTP** TCP `80` — open  
+- **HTTPS** TCP `443` — open (required for `acad.pydah.edu.in`)
 
-### 4. First CI/CD run
+### 4. Domain + HTTPS (already configured for `acad.pydah.edu.in`)
+
+DNS **A record**: `acad.pydah.edu.in` → `13.204.83.221`
+
+On the server (first time, or after IP/DNS changes):
+
+```bash
+bash ~/academic-portal/scripts/enable-domain-https.sh
+```
+
+This sets `CORS_ORIGIN` / `NEXT_PUBLIC_API_BASE_URL` to `https://acad.pydah.edu.in`, issues a Let's Encrypt cert, and enables secure cookies.
+
+### 5. First CI/CD run
 
 After secrets exist:
 
@@ -64,15 +78,15 @@ Or GitHub → **Actions** → **Deploy Lightsail** → **Run workflow**.
 
 Watch the job until it shows `DEPLOY_OK`, then open:
 
-- App: http://13.204.83.221  
-- API: http://13.204.83.221/api/health  
+- App: https://acad.pydah.edu.in  
+- API: https://acad.pydah.edu.in/api/health  
 
 ## Manual deploy from your PC (without waiting for Actions)
 
 ```powershell
 $pem = "$env:USERPROFILE\.ssh\lightsail-academic-portal-ap-south-1.pem"
 # or: $pem = "e:\Pydah Academic portal\LightsailDefaultKey-ap-south-1 (1).pem"
-$host = "13.204.83.221"
+$host = "acad.pydah.edu.in"
 $user = "ec2-user"
 
 rsync -az --delete -e "ssh -i `"$pem`"" `
@@ -88,7 +102,7 @@ On Windows without `rsync`, use **Git Bash** for the commands above, or rely on 
 ## Server-only redeploy (SSH)
 
 ```bash
-ssh -i ~/.ssh/lightsail-academic-portal-ap-south-1.pem ec2-user@13.204.83.221
+ssh -i ~/.ssh/lightsail-academic-portal-ap-south-1.pem ec2-user@acad.pydah.edu.in
 bash ~/academic-portal/scripts/deploy.sh
 pm2 status
 ```
@@ -99,12 +113,13 @@ pm2 status
 |---|---|
 | `.github/workflows/deploy-lightsail.yml` | CI/CD pipeline |
 | `scripts/deploy.sh` | Build + PM2 restart on server |
-| `scripts/lightsail-bootstrap.sh` | First-time server bootstrap (already used) |
-| `scripts/fix-api-http.sh` | One-time HTTP cookie allow for IP deploy |
+| `scripts/lightsail-bootstrap.sh` | First-time server bootstrap |
+| `scripts/enable-domain-https.sh` | Domain + Let's Encrypt HTTPS |
+| `scripts/fix-api-http.sh` | Legacy HTTP cookie allow (IP-only; prefer HTTPS) |
 
 ## Notes
 
 - Server env files stay on the instance only (`backend/.env`, `frontend/.env.local`).  
 - Never commit the PEM or production passwords.  
-- If the Lightsail public IP changes, update `LIGHTSAIL_HOST` and server CORS / `NEXT_PUBLIC_API_BASE_URL`, then redeploy.  
-- Prefer HTTPS + `AP_SESSION_SECURE=true` when you attach a domain.
+- If the Lightsail public IP changes, update DNS A record, then re-run `enable-domain-https.sh` and redeploy.  
+- Production uses `AP_SESSION_SECURE=true` behind HTTPS on `acad.pydah.edu.in`.
