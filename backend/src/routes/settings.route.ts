@@ -9,6 +9,10 @@ import {
   getWorkloadThresholdSettings,
   saveWorkloadThresholdSettings,
 } from "../services/workload-thresholds.service.js";
+import {
+  getComplaintTypes,
+  saveComplaintTypes,
+} from "../services/complaint-types.service.js";
 import { writeAuditLog } from "../services/audit.service.js";
 
 export const settingsRouter = Router();
@@ -115,6 +119,41 @@ settingsRouter.put(
         res.status(status).json({ message: (error as Error).message });
         return;
       }
+      next(error);
+    }
+  },
+);
+
+settingsRouter.get(
+  "/complaint-types",
+  requirePermission("settings.view"),
+  async (_req, res, next) => {
+    try {
+      res.json(await getComplaintTypes());
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+settingsRouter.put(
+  "/complaint-types",
+  requirePermission("settings.edit"),
+  async (req: AuthedRequest, res, next) => {
+    try {
+      const types = Array.isArray(req.body?.types) ? req.body.types : [];
+      const updated = await saveComplaintTypes(types);
+      await writeAuditLog({
+        actorUserId: req.authUser!.id,
+        action: "settings.complaint_types_updated",
+        entityType: "ap_complaint_types",
+        entityId: null,
+        oldValue: {},
+        newValue: { types },
+        ipAddress: req.ip,
+      });
+      res.json(updated);
+    } catch (error) {
       next(error);
     }
   },

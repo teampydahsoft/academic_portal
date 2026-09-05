@@ -1,5 +1,5 @@
 import type { RowDataPacket } from "mysql2";
-import { queryStudent } from "../db/pools.js";
+import { queryStudent, queryAcademic } from "../db/pools.js";
 import { resolveSemesterWindow } from "./student-academic-dates.service.js";
 
 type StudentListRow = RowDataPacket & {
@@ -891,6 +891,41 @@ export async function getStudentAttendance(
   };
 }
 
+interface ComplaintRow extends RowDataPacket {
+  id: number;
+  risk_type: string;
+  risk_reason: string | null;
+  severity: string;
+  status: string;
+  opened_at: string;
+  opened_by: number | null;
+  opened_by_name: string | null;
+  escalated_at: string | null;
+  resolved_at: string | null;
+}
+
+interface InterventionRow extends RowDataPacket {
+  id: number;
+  action_type: string;
+  notes: string | null;
+  outcome: string | null;
+  follow_up_date: string | null;
+  action_at: string;
+  risk_case_id: number;
+  actor_name: string | null;
+}
+
+interface EventRow extends RowDataPacket {
+  id: number;
+  event_type: string;
+  old_status: string | null;
+  new_status: string | null;
+  notes: string | null;
+  created_at: string;
+  risk_case_id: number;
+  actor_name: string | null;
+}
+
 export async function getStudentById(id: string) {
   const rows = await queryStudent<StudentCoreRow[]>(
     `
@@ -953,6 +988,86 @@ export async function getStudentById(id: string) {
     }),
   ]);
 
+  let complaintsRows: ComplaintRow[] = [];
+  try {
+    const studentDbIdNum = Number(row.id);
+    const admissionNum = Number(row.admission_number);
+    complaintsRows = await queryAcademic<ComplaintRow[]>(
+      `SELECT 
+         rc.id, 
+         rc.risk_type, 
+         rc.risk_reason, 
+         rc.severity, 
+         rc.status, 
+         rc.opened_at, 
+         rc.opened_by,
+         COALESCE(u.name, sl.display_name, 'Staff') AS opened_by_name,
+         rc.escalated_at, 
+         rc.resolved_at 
+       FROM ap_risk_cases rc
+       LEFT JOIN ap_users u ON u.id = rc.opened_by
+       LEFT JOIN ap_staff_link sl ON sl.hrms_employee_id = u.hrms_employee_id
+       WHERE rc.student_db_id = ? OR (rc.student_db_id = ? AND ? > 0)
+       ORDER BY rc.opened_at DESC`,
+      [studentDbIdNum, admissionNum, admissionNum]
+    );
+  } catch (err) {
+    console.error("Failed to query complaints for student:", err);
+  }
+
+  let allInterventions: InterventionRow[] = [];
+  let allEvents: EventRow[] = [];
+  if (complaintsRows.length > 0) {
+    const caseIds = complaintsRows.map((c) => c.id);
+    const placeholders = caseIds.map(() => "?").join(",");
+    try {
+      const [intRows, evtRows] = await Promise.all([
+        queryAcademic<InterventionRow[]>(
+          `
+          SELECT 
+            i.id, 
+            i.action_type, 
+            i.notes, 
+            i.outcome, 
+            i.follow_up_date, 
+            i.action_at, 
+            i.risk_case_id, 
+            COALESCE(u.name, sl.display_name, 'Staff') AS actor_name
+          FROM ap_interventions i
+          LEFT JOIN ap_users u ON u.id = i.action_by
+          LEFT JOIN ap_staff_link sl ON sl.hrms_employee_id = u.hrms_employee_id
+          WHERE i.risk_case_id IN (${placeholders})
+          ORDER BY i.action_at DESC
+          `,
+          caseIds
+        ),
+        queryAcademic<EventRow[]>(
+          `
+          SELECT 
+            e.id, 
+            e.event_type, 
+            e.old_status, 
+            e.new_status, 
+            e.notes, 
+            e.created_at, 
+            e.risk_case_id, 
+            COALESCE(u.name, sl.display_name, 'Staff') AS actor_name
+          FROM ap_risk_case_events e
+          LEFT JOIN ap_users u ON u.id = e.actor_user_id
+          LEFT JOIN ap_staff_link sl ON sl.hrms_employee_id = u.hrms_employee_id
+          WHERE e.risk_case_id IN (${placeholders})
+          ORDER BY e.created_at ASC
+          `,
+          caseIds
+        ),
+      ]);
+      allInterventions = intRows;
+      allEvents = evtRows;
+    } catch (err) {
+      console.error("Failed to query interventions/events for complaints:", err);
+    }
+  }
+
   const photo = text(row.student_photo);
 
   return {
@@ -995,5 +1110,42 @@ export async function getStudentById(id: string) {
     risk: attendance?.risk ?? "Low",
     attendancePeriod: attendance?.attendancePeriod,
     attendanceSemesters,
+    complaints: complaintsRows.map((c) => {
+      const caseEvents = allEvents.filter((e) => e.risk_case_id === c.id);
+      const createdEvent = caseEvents.find((e) => e.event_type === "created");
+      return {
+        id: c.id,
+        riskType: c.risk_type,
+        riskReason: c.risk_reason,
+        initialNotes: createdEvent?.notes ?? null,
+        severity: c.severity,
+        status: c.status,
+        openedAt: c.opened_at,
+        openedBy: c.opened_by ?? null,
+        openedByName: c.opened_by_name ?? null,
+        escalatedAt: c.escalated_at,
+        resolvedAt: c.resolved_at,
+        interventions: allInterventions
+          .filter((i) => i.risk_case_id === c.id)
+          .map((i) => ({
+            id: i.id,
+            actionType: i.action_type,
+            notes: i.notes,
+            outcome: i.outcome,
+            followUpDate: i.follow_up_date,
+            actionAt: i.action_at,
+            actionByName: i.actor_name,
+          })),
+        events: caseEvents.map((e) => ({
+          id: e.id,
+          eventType: e.event_type,
+          oldStatus: e.old_status,
+          newStatus: e.new_status,
+          notes: e.notes,
+          createdAt: e.created_at,
+          actorName: e.actor_name,
+        })),
+      };
+    }),
   };
 }

@@ -26,6 +26,7 @@ import {
   type RiskCaseStatus,
   RISK_CASE_STATUSES,
 } from "../services/mentoring.service.js";
+import { getComplaintTypes } from "../services/complaint-types.service.js";
 
 export const mentoringRouter = Router();
 
@@ -81,6 +82,15 @@ mentoringRouter.get("/dashboard", requirePermission("mentoring.view"), async (re
       res.status(status).json({ message: (error as Error).message });
       return;
     }
+    next(error);
+  }
+});
+
+mentoringRouter.get("/complaint-types", requirePermission("mentoring.view"), async (_req, res, next) => {
+  try {
+    const types = await getComplaintTypes();
+    res.json({ data: types.filter(t => t.enabled) });
+  } catch (error) {
     next(error);
   }
 });

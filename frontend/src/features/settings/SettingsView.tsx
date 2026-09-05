@@ -51,6 +51,12 @@ const sections: SettingsSection[] = [
     permissions: ["settings.view", "settings.edit"],
   },
   {
+    title: "Mentoring Complaint Types",
+    description: "Manage the dynamic list of complaint/risk types for student mentoring.",
+    href: "/settings/complaint-types",
+    permissions: ["settings.view", "settings.edit"],
+  },
+  {
     title: "Attendance Thresholds",
     description: "Risk and posting thresholds (coming soon).",
     permissions: ["settings.view"],

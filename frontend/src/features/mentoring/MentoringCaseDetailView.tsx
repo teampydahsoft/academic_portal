@@ -13,6 +13,7 @@ import { StudentAvatar } from "@/features/students/StudentAvatar";
 import { InterventionDialog } from "./InterventionDialog";
 import { InterventionTimeline } from "./InterventionTimeline";
 import { MentorAssignDialog } from "./MentorAssignDialog";
+import { CreateComplaintDialog } from "./CreateComplaintDialog";
 import type { MentoringStudentDetail, RiskCaseStatus } from "./types";
 import { formatComplaintStatus, formatDateTime } from "./utils";
 
@@ -24,6 +25,7 @@ export function MentoringCaseDetailView({ caseId }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [assignOpen, setAssignOpen] = useState(false);
   const [interventionOpen, setInterventionOpen] = useState(false);
+  const [createComplaintOpen, setCreateComplaintOpen] = useState(false);
   const [actionBusy, setActionBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
@@ -58,28 +60,6 @@ export function MentoringCaseDetailView({ caseId }: Props) {
   useEffect(() => {
     void load();
   }, [load]);
-
-  async function createCase() {
-    if (!detail) return;
-    setActionBusy(true);
-    setActionError(null);
-    try {
-      const response = await apiFetch("/mentoring/risk-cases", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ studentDbId: Number(detail.student.id) }),
-      });
-      const body = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error((body as { message?: string }).message ?? "Unable to create complaint");
-      }
-      await load();
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Unable to create complaint");
-    } finally {
-      setActionBusy(false);
-    }
-  }
 
   async function updateCaseStatus(status: RiskCaseStatus) {
     if (!detail?.activeCase) return;
@@ -210,7 +190,7 @@ export function MentoringCaseDetailView({ caseId }: Props) {
             </Button>
           ) : null}
           {permissions.canManageCase && !activeCase ? (
-            <Button size="sm" onClick={() => void createCase()} disabled={actionBusy}>
+            <Button size="sm" onClick={() => setCreateComplaintOpen(true)} disabled={actionBusy}>
               Create complaint
             </Button>
           ) : null}
@@ -341,6 +321,13 @@ export function MentoringCaseDetailView({ caseId }: Props) {
         studentName={student.name}
         onClose={() => setAssignOpen(false)}
         onAssigned={() => void load()}
+      />
+
+      <CreateComplaintDialog
+        open={createComplaintOpen}
+        studentId={Number(student.id)}
+        onClose={() => setCreateComplaintOpen(false)}
+        onCreated={() => void load()}
       />
 
       {activeCase ? (

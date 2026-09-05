@@ -29,6 +29,38 @@ export type AttendanceSemesterOption = {
   label: string;
 };
 
+export type StudentComplaint = {
+  id: number;
+  riskType: string;
+  riskReason: string | null;
+  initialNotes?: string | null;
+  severity: string;
+  status: string;
+  openedAt: string;
+  openedBy?: number | null;
+  openedByName?: string | null;
+  escalatedAt: string | null;
+  resolvedAt: string | null;
+  interventions: Array<{
+    id: number;
+    actionType: string;
+    notes: string | null;
+    outcome: string | null;
+    followUpDate: string | null;
+    actionAt: string;
+    actionByName: string | null;
+  }>;
+  events: Array<{
+    id: number;
+    eventType: string;
+    oldStatus: string | null;
+    newStatus: string | null;
+    notes: string | null;
+    createdAt: string;
+    actorName: string | null;
+  }>;
+};
+
 export type StudentDetail = {
   id: string;
   name: string;
@@ -79,4 +111,6 @@ export type StudentDetail = {
     label: string;
   };
   attendanceSemesters?: AttendanceSemesterOption[];
+  complaints?: StudentComplaint[];
 };
+
