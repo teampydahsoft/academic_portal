@@ -165,6 +165,17 @@ function mapSessionCard(row: SessionListRow, holiday: boolean) {
 
 export async function listAttendanceSessions(filters: AttendanceListFilters) {
   const date = filters.date || todayIso();
+  const today = todayIso();
+  if (date > today) {
+    return {
+      date,
+      scheduled: 0,
+      posted: 0,
+      data: [],
+      message: `Attendance posting is not allowed for future dates (${date}). Select today or a past date within the current semester.`,
+    };
+  }
+
   let generated = null as Awaited<ReturnType<typeof ensureSessionsForDate>> | null;
 
   if (filters.generate !== false) {
@@ -268,15 +279,137 @@ export async function listAttendanceSessions(filters: AttendanceListFilters) {
     params,
   );
 
+  const collegeIds = Array.from(new Set(rows.map((r) => r.college_id).filter(Boolean)));
+  const courseIds = Array.from(new Set(rows.map((r) => r.course_id).filter(Boolean)));
+  const branchIds = Array.from(new Set(rows.map((r) => r.branch_id).filter(Boolean)));
+
+  const [colleges, courses, branches] = await Promise.all([
+    collegeIds.length
+      ? queryStudent<{ id: number; name: string }[]>(
+          `SELECT id, name FROM colleges WHERE id IN (${collegeIds.map(() => "?").join(",")})`,
+          collegeIds,
+        )
+      : [],
+    courseIds.length
+      ? queryStudent<{ id: number; name: string }[]>(
+          `SELECT id, name FROM courses WHERE id IN (${courseIds.map(() => "?").join(",")})`,
+          courseIds,
+        )
+      : [],
+    branchIds.length
+      ? queryStudent<{ id: number; name: string }[]>(
+          `SELECT id, name FROM course_branches WHERE id IN (${branchIds.map(() => "?").join(",")})`,
+          branchIds,
+        )
+      : [],
+  ]);
+
+  const collegeMap = new Map(colleges.map((c) => [c.id, c.name]));
+  const courseMap = new Map(courses.map((c) => [c.id, c.name]));
+  const branchMap = new Map(branches.map((b) => [b.id, b.name]));
+
   const holidays = await listCustomHolidays({ startDate: date, endDate: date });
   const sessions = rows
     .map((row) => {
       const holiday = holidays.some((item) =>
         holidayAppliesToScope(item, holidayScopeFromRow(row)),
       );
-      return mapSessionCard(row, holiday);
+      const card = mapSessionCard(row, holiday);
+      return {
+        ...card,
+        collegeName: collegeMap.get(Number(row.college_id)) ?? `College #${row.college_id}`,
+        courseName: courseMap.get(Number(row.course_id)) ?? `Course #${row.course_id}`,
+        branchName: branchMap.get(Number(row.branch_id)) ?? `Branch #${row.branch_id}`,
+      };
     })
     .filter((session) => !session.holiday);
+
+  const byCollegeMap = new Map<
+    number,
+    {
+      collegeId: number;
+      collegeName: string;
+      totalSessions: number;
+      pending: number;
+      posted: number;
+      branches: Map<
+        number,
+        {
+          branchId: number;
+          branchName: string;
+          totalSessions: number;
+          pending: number;
+          posted: number;
+        }
+      >;
+    }
+  >();
+
+  for (const s of sessions) {
+    const cid = Number(s.collegeId);
+    let col = byCollegeMap.get(cid);
+    if (!col) {
+      col = {
+        collegeId: cid,
+        collegeName: s.collegeName,
+        totalSessions: 0,
+        pending: 0,
+        posted: 0,
+        branches: new Map(),
+      };
+      byCollegeMap.set(cid, col);
+    }
+    col.totalSessions += 1;
+    if (s.posted) col.posted += 1;
+    else col.pending += 1;
+
+    const bid = Number(s.branchId);
+    let br = col.branches.get(bid);
+    if (!br) {
+      br = {
+        branchId: bid,
+        branchName: s.branchName,
+        totalSessions: 0,
+        pending: 0,
+        posted: 0,
+      };
+      col.branches.set(bid, br);
+    }
+    br.totalSessions += 1;
+    if (s.posted) br.posted += 1;
+    else br.pending += 1;
+  }
+
+  const byCollege = Array.from(byCollegeMap.values()).map((col) => ({
+    collegeId: col.collegeId,
+    collegeName: col.collegeName,
+    totalSessions: col.totalSessions,
+    pending: col.pending,
+    posted: col.posted,
+    completionPct: col.totalSessions
+      ? Math.round((col.posted / col.totalSessions) * 100)
+      : 0,
+    byBranch: Array.from(col.branches.values()).map((br) => ({
+      branchId: br.branchId,
+      branchName: br.branchName,
+      totalSessions: br.totalSessions,
+      pending: br.pending,
+      posted: br.posted,
+      completionPct: br.totalSessions
+        ? Math.round((br.posted / br.totalSessions) * 100)
+        : 0,
+    })),
+  }));
+
+  const abstract = {
+    totalColleges: byCollege.length,
+    totalCourses: courseIds.length,
+    totalBranches: branchIds.length,
+    overallCompletionPct: sessions.length
+      ? Math.round((sessions.filter((s) => s.posted).length / sessions.length) * 100)
+      : 0,
+    byCollege,
+  };
 
   return {
     date,
@@ -288,6 +421,7 @@ export async function listAttendanceSessions(filters: AttendanceListFilters) {
     generated,
     scheduled: sessions.filter((s) => !s.posted).length,
     posted: sessions.filter((s) => s.posted).length,
+    abstract,
     data: sessions,
   };
 }
@@ -494,6 +628,13 @@ export async function postAttendance(
   }
 
   const date = asDate(row.session_date)!;
+  const today = todayIso();
+  if (date > today) {
+    throw Object.assign(
+      new Error(`Cannot post attendance for future dates (${date}).`),
+      { status: 400 },
+    );
+  }
   const holidays = await listCustomHolidays({
     startDate: date,
     endDate: date,

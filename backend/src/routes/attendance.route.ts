@@ -56,21 +56,22 @@ attendanceRouter.get(
     try {
       const scoped = scopedQuery(req);
       const facultyStaffLinkId = await facultyFilter(req);
+      const isStaff = facultyStaffLinkId != null;
       const generate =
         req.query.generate === "false" || req.query.generate === "0" ? false : true;
       res.json(
         await listAttendanceSessions({
           date: str(req.query.date),
-          collegeId: scoped.collegeId,
-          collegeIds: scoped.collegeIds,
-          courseId: num(req.query.courseId),
-          branchId: scoped.branchId,
-          branchIds: scoped.branchIds,
-          batch: str(req.query.batch),
-          year: num(req.query.year),
-          semester: num(req.query.semester),
-          section: str(req.query.section),
-          academicYear: str(req.query.academicYear),
+          collegeId: isStaff ? undefined : scoped.collegeId,
+          collegeIds: isStaff ? undefined : scoped.collegeIds,
+          courseId: isStaff ? undefined : num(req.query.courseId),
+          branchId: isStaff ? undefined : scoped.branchId,
+          branchIds: isStaff ? undefined : scoped.branchIds,
+          batch: isStaff ? undefined : str(req.query.batch),
+          year: isStaff ? undefined : num(req.query.year),
+          semester: isStaff ? undefined : num(req.query.semester),
+          section: isStaff ? undefined : str(req.query.section),
+          academicYear: isStaff ? undefined : str(req.query.academicYear),
           generate,
           ...(facultyStaffLinkId != null ? { facultyStaffLinkId } : {}),
         }),

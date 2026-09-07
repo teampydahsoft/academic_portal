@@ -21,6 +21,10 @@ import {
   isTeachingGroup,
   loadHrmsOrgLookups,
 } from "./hrms-staff.service.js";
+import {
+  employeeMatchesFacultyGroupFilter,
+  getFacultyGroupFilter,
+} from "./portal-settings.service.js";
 import type { PoolConnection } from "mysql2/promise";
 
 export type TimetablePlannerFilters = {
@@ -256,6 +260,7 @@ export async function listFacultyOptions(limit = 500) {
   try {
     const db = await getHrmsDb();
     const lookups = await loadHrmsOrgLookups(db);
+    const groupFilter = await getFacultyGroupFilter();
     const employees = await db
       .collection("employees")
       .find({
@@ -267,7 +272,14 @@ export async function listFacultyOptions(limit = 500) {
 
     const mapped = employees
       .map((raw) => extractHrmsStaffProfile(raw as Record<string, unknown>, lookups))
-      .filter((staff) => isTeachingGroup(staff.employeeGroup))
+      .filter(
+        (staff) =>
+          employeeMatchesFacultyGroupFilter(
+            groupFilter,
+            staff.employeeGroupId,
+            staff.employeeGroup,
+          ) || isTeachingGroup(staff.employeeGroup),
+      )
       .map((staff) => ({
         hrmsEmployeeId: staff.hrmsId,
         name: staff.name,
@@ -537,14 +549,14 @@ async function refreshEntrySubjectSnapshots(
 ) {
   const query = async <T>(sql: string, params: unknown[] = []) => {
     if (conn) {
-      const [rows] = await conn.query(sql, params);
+      const [rows] = await conn.query(sql, params as never);
       return rows as T;
     }
     return queryAcademic<T>(sql, params);
   };
   const exec = async (sql: string, params: unknown[] = []) => {
     if (conn) {
-      await conn.execute(sql, params);
+      await conn.execute(sql, params as never);
       return;
     }
     await executeAcademic(sql, params);

@@ -281,6 +281,17 @@ export async function generateClassSessions(input: {
     );
   }
 
+  const today = formatDate(new Date());
+  if (requestedStart && requestedStart > today) {
+    return { created: 0, skippedHolidayDates: 0, skippedExisting: 0, skippedNoClasses: 0 };
+  }
+  if (semesterWindow?.startDate && requestedStart && requestedStart < semesterWindow.startDate) {
+    return { created: 0, skippedHolidayDates: 0, skippedExisting: 0, skippedNoClasses: 0 };
+  }
+  if (semesterWindow?.endDate && requestedStart && requestedStart > semesterWindow.endDate) {
+    return { created: 0, skippedHolidayDates: 0, skippedExisting: 0, skippedNoClasses: 0 };
+  }
+
   const holidayScope = {
     collegeId: plan.college_id,
     courseId: plan.course_id,

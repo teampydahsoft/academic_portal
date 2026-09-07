@@ -25,6 +25,7 @@ const HIDDEN_ON = [
   "/staff-workload",
   "/my-timetable",
   "/requests",
+  "/attendance-posting",
 ];
 
 type Props = {

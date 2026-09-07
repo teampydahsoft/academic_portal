@@ -620,14 +620,27 @@ export function TimetablePlannerView() {
     const list = planner?.faculty ?? [];
     const q = facultySearch.trim().toLowerCase();
     if (q.length < 2) return [];
-    return list.filter(
-      (f) =>
-        f.name.toLowerCase().includes(q) ||
-        f.hrmsEmployeeId.toLowerCase().includes(q) ||
-        f.department.toLowerCase().includes(q) ||
-        f.division.toLowerCase().includes(q) ||
-        f.designation.toLowerCase().includes(q),
-    );
+    const digitsOnly = q.replace(/\D/g, "");
+
+    return list.filter((f) => {
+      const name = (f.name ?? "").toLowerCase();
+      const id = (f.hrmsEmployeeId ?? "").toLowerCase();
+      const idDigits = (f.hrmsEmployeeId ?? "").replace(/\D/g, "");
+      const dept = (f.department ?? "").toLowerCase();
+      const div = (f.division ?? "").toLowerCase();
+      const desig = (f.designation ?? "").toLowerCase();
+      const grp = ((f as { employeeGroup?: string }).employeeGroup ?? "").toLowerCase();
+
+      return (
+        name.includes(q) ||
+        id.includes(q) ||
+        (digitsOnly.length > 0 && idDigits.includes(digitsOnly)) ||
+        dept.includes(q) ||
+        div.includes(q) ||
+        desig.includes(q) ||
+        grp.includes(q)
+      );
+    });
   }, [planner?.faculty, facultySearch]);
 
   const visibleFaculty = useMemo(

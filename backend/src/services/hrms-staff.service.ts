@@ -352,7 +352,16 @@ export function extractHrmsStaffProfile(
 }
 
 export function isTeachingGroup(groupName: string) {
-  const normalized = groupName.trim().toUpperCase();
-  return normalized.includes("TEACH") && !normalized.includes("NON TEACH");
+  const normalized = (groupName ?? "").trim().toUpperCase();
+  if (normalized.includes("NON TEACH") || normalized.includes("NON-TEACH")) {
+    return false;
+  }
+  return (
+    normalized.includes("TEACH") ||
+    normalized.includes("SELECTION") ||
+    normalized.includes("FACULTY") ||
+    normalized.includes("PROFESSOR") ||
+    normalized.includes("LECTURER")
+  );
 }
 
