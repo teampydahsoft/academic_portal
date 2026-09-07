@@ -19,7 +19,8 @@ const MARKS: AttendanceMark[] = ["present", "absent", "od", "leave"];
 const POSTING_MARKS: AttendanceMark[] = ["present", "absent"];
 
 function normalizePostingMark(status: AttendanceMark | string | null | undefined): AttendanceMark {
-  return status === "present" ? "present" : "absent";
+  if (!status) return "present";
+  return status === "absent" ? "absent" : "present";
 }
 
 type SessionListRow = RowDataPacket & {
@@ -55,7 +56,13 @@ type SessionListRow = RowDataPacket & {
 type StudentRow = RowDataPacket & {
   id: number;
   admission_number: string;
+  pin_no: string | null;
   student_name: string | null;
+  course: string | null;
+  branch: string | null;
+  current_year: number | null;
+  current_semester: number | null;
+  has_photo?: number;
 };
 
 function todayIso() {
@@ -370,11 +377,12 @@ async function loadRosterStudents(row: SessionListRow) {
 
   return queryStudent<StudentRow[]>(
     `
-    SELECT s.id, s.admission_number, s.student_name
+    SELECT s.id, s.admission_number, s.pin_no, s.student_name, s.course, s.branch, s.current_year, s.current_semester,
+           CASE WHEN s.student_photo IS NOT NULL AND TRIM(s.student_photo) <> '' THEN 1 ELSE 0 END AS has_photo
     FROM students s
     LEFT JOIN student_sections ss ON ss.student_id = s.id
     WHERE ${where.join(" AND ")}
-    GROUP BY s.id, s.admission_number, s.student_name
+    GROUP BY s.id, s.admission_number, s.pin_no, s.student_name, s.course, s.branch, s.current_year, s.current_semester
     ORDER BY s.student_name
     LIMIT 500
     `,
@@ -439,6 +447,12 @@ export async function getAttendanceSession(sessionId: number) {
         studentDbId: Number(student.id),
         name: student.student_name ?? "Unknown",
         admissionNo: student.admission_number,
+        pinNo: student.pin_no ?? null,
+        course: student.course ?? null,
+        branch: student.branch ?? null,
+        year: student.current_year ?? null,
+        semester: student.current_semester ?? null,
+        hasPhoto: Boolean(student.has_photo),
         status: normalizePostingMark(existing?.status),
         remarks: existing?.remarks ?? null,
       };

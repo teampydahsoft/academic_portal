@@ -656,58 +656,134 @@ export function TimetablePlannerView() {
     return inferred === form.hrmsEmployeeId;
   }, [assignments, form.entryType, form.hrmsEmployeeId, form.mode, form.subjectId, selected]);
 
+  const uniqueAllocations = useMemo(() => {
+    if (!planner?.days?.length) return [];
+    const map = new Map<string, {
+      subjectCode: string;
+      subjectName: string;
+      facultyName: string;
+      roomLabel: string;
+      customLabel: string;
+    }>();
+
+    for (const day of planner.days) {
+      const daySlots = planner.slotsByDay?.[day] ?? [];
+      for (const slot of daySlots) {
+        if (isNonClassTimingSlot(slot)) continue;
+        const cell = planner.grid[day]?.[slot.id];
+        const dayCode = DAY_LABEL_TO_CODE[day] ?? day;
+        const local = assignmentMap.get(`${dayCode}:${slot.id}`);
+
+        if (local) {
+          if (local.customLabel) {
+            const key = `custom:${local.customLabel.trim().toLowerCase()}`;
+            if (!map.has(key)) {
+              map.set(key, {
+                subjectCode: "—",
+                subjectName: local.customLabel,
+                facultyName: local.facultyName || "—",
+                roomLabel: local.roomLabel || "—",
+                customLabel: local.customLabel,
+              });
+            }
+          } else if (local.subjectName || local.subjectCode) {
+            const key = `${local.subjectCode || local.subjectId}:${local.facultyName || ""}`;
+            if (!map.has(key)) {
+              map.set(key, {
+                subjectCode: local.subjectCode || "—",
+                subjectName: local.subjectName || "Subject",
+                facultyName: local.facultyName || "Unassigned",
+                roomLabel: local.roomLabel || "—",
+                customLabel: "",
+              });
+            }
+          }
+        } else if (cell?.entry) {
+          const entry = cell.entry;
+          if (entry.customLabel) {
+            const key = `custom:${entry.customLabel.trim().toLowerCase()}`;
+            if (!map.has(key)) {
+              map.set(key, {
+                subjectCode: "—",
+                subjectName: entry.customLabel,
+                facultyName: entry.facultyName || "—",
+                roomLabel: entry.roomLabel || "—",
+                customLabel: entry.customLabel,
+              });
+            }
+          } else if (entry.subjectName || entry.subjectCode) {
+            const key = `${entry.subjectCode || entry.subjectId}:${entry.facultyName || ""}`;
+            if (!map.has(key)) {
+              map.set(key, {
+                subjectCode: entry.subjectCode || "—",
+                subjectName: entry.subjectName || "Subject",
+                facultyName: entry.facultyName || "Unassigned",
+                roomLabel: entry.roomLabel || "—",
+                customLabel: "",
+              });
+            }
+          }
+        }
+      }
+    }
+
+    return Array.from(map.values()).sort((a, b) => a.subjectName.localeCompare(b.subjectName));
+  }, [planner, assignmentMap]);
+
   const fieldClass =
     "h-10 w-full rounded-lg border border-border bg-white px-3 text-sm text-navy-900 outline-none transition-colors focus:border-navy-700 focus:ring-2 focus:ring-navy-900/10";
 
   return (
     <div>
-      <PageHeader
-        title="Timetable Planning"
-        description="College-specific timing templates owned by Academic Portal. Student DB is used only for academic masters."
-        actions={
-          <>
-            {timingContextReady && canConfigureTimings ? (
-              <Button
-                variant="secondary"
-                disabled={busy}
-                onClick={() => setTimingsOpen(true)}
-                className="print:hidden"
-              >
-                {planner?.missingTiming || !planner?.timing
-                  ? "Configure Timings"
-                  : "Edit Timings"}
-              </Button>
-            ) : null}
+      <div className="mb-5 flex flex-col items-center text-center gap-2">
+        <h1 className="text-[28px] font-bold leading-tight text-navy-900">
+          Timetable
+        </h1>
+        <p className="text-sm text-slate-500 max-w-3xl print:hidden">
+          College-specific timing templates owned by Academic Portal. Student DB is used only for academic masters.
+        </p>
+        <div className="flex flex-wrap items-center justify-center gap-2 print:hidden mt-2">
+          {timingContextReady && canConfigureTimings ? (
             <Button
               variant="secondary"
-              disabled={!planner?.ready || busy}
-              onClick={() => window.print()}
+              disabled={busy}
+              onClick={() => setTimingsOpen(true)}
               className="print:hidden"
             >
-              <Printer className="mr-2 h-4 w-4" /> Download PDF
+              {planner?.missingTiming || !planner?.timing
+                ? "Configure Timings"
+                : "Edit Timings"}
             </Button>
-            {canEdit ? (
-              <Button variant="secondary" disabled={!planner?.ready || busy} onClick={() => void saveDraft()} className="print:hidden">
-                Save Draft
-              </Button>
-            ) : null}
-            {canEdit ? (
-              <Button variant="secondary" disabled={!planner?.ready || busy} onClick={() => void runReview()} className="print:hidden">
-                Review
-              </Button>
-            ) : null}
-            {canPublish ? (
-              <Button
-                disabled={!planner?.ready || busy || publishBlocked}
-                onClick={() => void publish()}
-                className="print:hidden"
-              >
-                Publish
-              </Button>
-            ) : null}
-          </>
-        }
-      />
+          ) : null}
+          <Button
+            variant="secondary"
+            disabled={!planner?.ready || busy}
+            onClick={() => window.print()}
+            className="print:hidden"
+          >
+            <Printer className="mr-2 h-4 w-4" /> Download PDF
+          </Button>
+          {canEdit ? (
+            <Button variant="secondary" disabled={!planner?.ready || busy} onClick={() => void saveDraft()} className="print:hidden">
+              Save Draft
+            </Button>
+          ) : null}
+          {canEdit ? (
+            <Button variant="secondary" disabled={!planner?.ready || busy} onClick={() => void runReview()} className="print:hidden">
+              Review
+            </Button>
+          ) : null}
+          {canPublish ? (
+            <Button
+              disabled={!planner?.ready || busy || publishBlocked}
+              onClick={() => void publish()}
+              className="print:hidden"
+            >
+              Publish
+            </Button>
+          ) : null}
+        </div>
+      </div>
 
       {missingLabel ? (
         <Card className="mb-4">
@@ -761,17 +837,16 @@ export function TimetablePlannerView() {
 
       {planner?.ready ? (
         <>
-          <Card className="mb-4 flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h3 className="text-base font-semibold text-navy-900">
+          <Card className="mb-4 flex flex-wrap items-center justify-between gap-3 print:mb-2 print:p-2 print:text-center print:block print:w-full">
+            <div className="print:w-full print:text-center">
+              <h3 className="text-base font-bold text-navy-900 print:text-[14px]">
                 {planner.context.college}
               </h3>
-              <p className="text-sm text-slate-500">
+              <p className="mt-0.5 text-sm font-bold text-navy-900 print:text-[11px]">
                 {planner.context.academicYear} • Semester {planner.context.semester}
                 {" • "}
                 Timing: {planner.context.timingTemplateName}
-              </p>
-              <p className="mt-1 text-sm text-slate-600">
+                {" • "}
                 {planner.context.course} / {planner.context.branch}
                 {planner.context.hasSections ? ` • Section ${planner.context.section}` : ""}
                 {" • Batch "}
@@ -797,7 +872,7 @@ export function TimetablePlannerView() {
             </div>
           </Card>
 
-          <div className="overflow-x-auto print:overflow-visible print:border-0 rounded-lg border border-border bg-card">
+          <div className="overflow-x-auto print:overflow-visible rounded-lg border border-border print:border-slate-400 bg-card">
             <table className="w-full min-w-[980px] print:min-w-full table-fixed border-collapse text-sm">
               <colgroup>
                 <col style={{ width: "5.5rem" }} />
@@ -807,11 +882,11 @@ export function TimetablePlannerView() {
               </colgroup>
               <thead>
                 <tr className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-                  <th className="border-b border-border px-2 py-2 text-left">Day</th>
+                  <th className="border-b border-r border-border px-2 py-2 text-left print:text-center">Day</th>
                   {headerSlots.map((slot) => {
                     const nonClass = isNonClassTimingSlot(slot);
                     return (
-                      <th key={slot.id} className="border-b border-border px-2 py-2 text-center">
+                      <th key={slot.id} className="border-b border-r last:border-r-0 border-border px-2 py-2 text-center">
                         <div className="truncate">
                           {nonClass ? timingSlotDisplayLabel(slot) : slot.label}
                         </div>
@@ -831,7 +906,7 @@ export function TimetablePlannerView() {
                   const dayCode = DAY_LABEL_TO_CODE[day] ?? day;
                   return (
                     <tr key={day}>
-                      <td className="border-b border-border px-2 py-2 font-medium text-navy-900">
+                      <td className="border-b border-r border-border px-2 py-2 font-medium text-navy-900">
                         {day}
                       </td>
                       {headerSlots.map((headerSlot) => {
@@ -845,7 +920,7 @@ export function TimetablePlannerView() {
                           return (
                             <td
                               key={`${day}-${headerSlot.id}`}
-                              className="border-b border-border bg-slate-50/60 p-1.5"
+                              className="border-b border-r last:border-r-0 border-border bg-slate-50/60 p-1"
                             />
                           );
                         }
@@ -857,15 +932,15 @@ export function TimetablePlannerView() {
 
                         if (isBreak) {
                           return (
-                            <td key={`${day}-${slot.id}`} className="border-b border-border p-1.5">
+                            <td key={`${day}-${slot.id}`} className="border-b border-r last:border-r-0 border-border p-1 print:p-0.5 text-center">
                               <div
                                 className={cn(
-                                  "flex h-24 flex-col items-center justify-center rounded-md text-xs font-semibold",
+                                  "flex min-h-[88px] print:min-h-0 print:h-[44px] h-full flex-col items-center justify-center rounded-md text-xs font-semibold px-1 text-center",
                                   timingSlotCellClass(slot),
                                 )}
                               >
                                 <span>{timingSlotDisplayLabel(slot)}</span>
-                                <span className="mt-0.5 text-[10px] font-normal opacity-80">
+                                <span className="mt-0.5 text-[10px] font-normal opacity-80 print:hidden">
                                   {slot.startTime}–{slot.endTime}
                                 </span>
                               </div>
@@ -874,7 +949,7 @@ export function TimetablePlannerView() {
                         }
 
                         return (
-                          <td key={`${day}-${slot.id}`} className="border-b border-border p-1.5">
+                          <td key={`${day}-${slot.id}`} className="border-b border-r last:border-r-0 border-border p-1 print:p-0.5 text-center">
                             <button
                               type="button"
                               onClick={() =>
@@ -889,7 +964,7 @@ export function TimetablePlannerView() {
                                 })
                               }
                               className={cn(
-                                "h-24 w-full rounded-md border px-2 py-1.5 text-left transition-colors",
+                                "min-h-[88px] print:min-h-0 print:h-[44px] h-full w-full rounded-md border px-1.5 py-1.5 print:py-0.5 text-left print:text-center transition-colors flex flex-col justify-between print:justify-center print:items-center overflow-hidden",
                                 selected?.day === day && selected.slotId === slot.id
                                   ? "border-navy-800 ring-1 ring-navy-800"
                                   : "border-border hover:border-slate-300",
@@ -901,33 +976,55 @@ export function TimetablePlannerView() {
                               )}
                             >
                               {local ? (
-                                <>
-                                  {local.customLabel ? (
-                                    <p className="font-semibold text-navy-900">{local.customLabel}</p>
-                                  ) : subject ? (
-                                    <>
-                                      <p className="line-clamp-2 font-semibold leading-snug text-navy-900">
-                                        {subject.title}
+                                <div className="flex flex-col justify-between print:justify-center items-stretch print:items-center h-full w-full space-y-0.5 text-left print:text-center">
+                                  <div className="w-full text-left print:text-center">
+                                    {local.customLabel ? (
+                                      <p className="font-bold text-xs text-navy-900 line-clamp-2 leading-tight print:text-[9.5px] print:leading-tight text-left print:text-center">
+                                        {local.customLabel}
                                       </p>
-                                      {subject.subtitle ? (
-                                        <p className="text-xs font-mono text-slate-500">
-                                          {subject.subtitle}
+                                    ) : subject ? (
+                                      <>
+                                        <p
+                                          className="line-clamp-2 font-bold text-xs leading-tight text-navy-900 print:text-[9.5px] print:leading-tight text-left print:text-center"
+                                          title={subject.title}
+                                        >
+                                          {subject.title}
                                         </p>
-                                      ) : null}
-                                    </>
-                                  ) : null}
-                                  {local.customLabel ? (
-                                    <p className="text-xs text-violet-700">Free / Special</p>
-                                  ) : null}
-                                  {local.facultyName ? (
-                                    <p className="text-xs text-slate-600">{local.facultyName}</p>
-                                  ) : null}
-                                  {local.roomLabel ? (
-                                    <p className="text-xs text-slate-500">Room {local.roomLabel}</p>
-                                  ) : null}
-                                </>
+                                        {subject.subtitle ? (
+                                          <p className="text-[10px] font-mono text-slate-500 mt-0.5 print:hidden">
+                                            {subject.subtitle}
+                                          </p>
+                                        ) : null}
+                                      </>
+                                    ) : null}
+                                  </div>
+                                  <div className="mt-auto print:mt-0 space-y-0 pt-0.5 print:pt-0 text-left print:text-center w-full">
+                                    {local.customLabel ? (
+                                      <p className="text-[10px] font-medium text-violet-700 print:hidden">
+                                        Free / Special
+                                      </p>
+                                    ) : null}
+                                    {local.facultyName ? (
+                                      <p
+                                        className="text-[10px] font-medium text-slate-600 truncate print:hidden"
+                                        title={local.facultyName}
+                                      >
+                                        {local.facultyName}
+                                      </p>
+                                    ) : null}
+                                    {local.roomLabel ? (
+                                      <p className="text-[9px] font-medium text-slate-500 print:hidden">
+                                        Room {local.roomLabel}
+                                      </p>
+                                    ) : null}
+                                  </div>
+                                </div>
                               ) : (
-                                <p className="text-xs text-slate-400">Free / Assign</p>
+                                <div className="flex items-center justify-center h-full w-full min-h-[60px] print:min-h-0 text-center">
+                                  <p className="text-xs font-medium text-slate-400 print:hidden">
+                                    Free / Assign
+                                  </p>
+                                </div>
                               )}
                             </button>
                           </td>
@@ -939,6 +1036,50 @@ export function TimetablePlannerView() {
               </tbody>
             </table>
           </div>
+
+          {/* Subject & Faculty Allocation Summary Table */}
+          {uniqueAllocations.length > 0 ? (
+            <div className="mt-3.5 rounded-xl border border-border bg-card p-4 shadow-xs print:mt-2 print:p-0 print:border-0 print:w-full print:shadow-none">
+              <div className="flex items-center justify-between mb-2 print:mb-1">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-navy-900 print:text-[11px] print:text-left">
+                  Subject & Faculty Allocation Summary
+                </h4>
+                <span className="text-xs text-slate-500 font-medium print:hidden">
+                  {uniqueAllocations.length} {uniqueAllocations.length === 1 ? "Subject" : "Subjects / Allocations"}
+                </span>
+              </div>
+              <div className="overflow-x-auto rounded-lg border border-border print:border-slate-400 bg-white print:w-full">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-slate-100/90 text-slate-700 font-semibold border-b border-border text-[11px] uppercase tracking-wide">
+                      <th className="py-2 px-3 print:py-1 print:px-2 w-10 text-center print:text-[10px] border-r border-border">#</th>
+                      <th className="py-2 px-3 print:py-1 print:px-2 w-32 print:text-[10px] border-r border-border">Subject Code</th>
+                      <th className="py-2 px-3 print:py-1 print:px-2 print:text-[10px] border-r border-border">Subject Name</th>
+                      <th className="py-2 px-3 print:py-1 print:px-2 print:text-[10px] border-r border-border">Faculty Name</th>
+                      <th className="py-2 px-3 print:py-1 print:px-2 w-28 print:text-[10px]">Room / Special</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {uniqueAllocations.map((alloc, idx) => (
+                      <tr key={`${alloc.subjectCode}-${alloc.subjectName}-${idx}`} className="hover:bg-slate-50/80 transition-colors">
+                        <td className="py-2 px-3 print:py-1 print:px-2 text-center font-bold text-slate-400 print:text-[10px] border-r border-border">{idx + 1}</td>
+                        <td className="py-2 px-3 print:py-1 print:px-2 font-mono font-bold text-navy-900 print:text-[10px] border-r border-border">
+                          <span className="inline-block bg-slate-100 rounded px-1.5 py-0.5 text-[11px] print:bg-transparent print:p-0 print:text-[10px]">
+                            {alloc.subjectCode}
+                          </span>
+                        </td>
+                        <td className="py-2 px-3 print:py-1 print:px-2 font-semibold text-slate-800 print:text-[10px] border-r border-border">{alloc.subjectName}</td>
+                        <td className="py-2 px-3 print:py-1 print:px-2 font-medium text-slate-700 print:text-[10px] border-r border-border">{alloc.facultyName}</td>
+                        <td className="py-2 px-3 print:py-1 print:px-2 text-slate-500 font-medium print:text-[10px]">
+                          {alloc.roomLabel !== "—" ? `Room ${alloc.roomLabel}` : alloc.customLabel || "—"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : null}
 
           {selected && planner ? (
             <div className="fixed inset-0 z-40 flex items-center justify-center p-4">
