@@ -25,15 +25,15 @@ export function StatCard({
   return (
     <div
       className={cn(
-        "rounded-lg border bg-card p-4 shadow-sm",
+        "rounded-lg border bg-card p-4 shadow-sm print:p-1.5 print:shadow-none",
         toneMap[tone],
       )}
     >
-      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+      <p className="text-xs font-medium uppercase tracking-wide text-slate-500 print:text-[9.5px]">
         {label}
       </p>
-      <p className="mt-2 text-2xl font-semibold text-navy-900">{value}</p>
-      {hint ? <p className="mt-1 text-xs text-slate-500">{hint}</p> : null}
+      <p className="mt-2 text-2xl font-semibold text-navy-900 print:mt-0 print:text-sm print:font-bold">{value}</p>
+      {hint ? <p className="mt-1 text-xs text-slate-500 print:hidden">{hint}</p> : null}
     </div>
   );
 }

@@ -120,13 +120,13 @@ export function FacultyWorkloadDetailView() {
           </Link>
         }
       />
-      <div className="mb-4 flex flex-wrap items-center gap-2">
+      <div className="mb-4 flex flex-wrap items-center gap-2 print:hidden">
         <StatusBadge status={faculty.status} />
         <span className="text-sm text-slate-500">
           {faculty.periodsPerWeek} periods • {faculty.hoursPerWeek} hours / week
         </span>
       </div>
-      <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4 print:mb-2 print:grid-cols-4 print:gap-1.5">
         <StatCard label="Department" value={faculty.department} />
         <StatCard label="Branches taught" value={faculty.sections} />
         <StatCard label="Subjects" value={faculty.subjects} />
@@ -143,7 +143,7 @@ export function FacultyWorkloadDetailView() {
         <WorkloadTimetableGrid timetable={faculty.timetable} />
       )}
 
-      <Card className="mt-4">
+      <Card className="mt-4 print:hidden">
         <h3 className="mb-2 text-base font-semibold text-navy-900">Source</h3>
         <p className="text-sm text-slate-600">{faculty.source}</p>
       </Card>
