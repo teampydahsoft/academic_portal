@@ -4,6 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Search, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { apiFetch } from "@/lib/api";
+import { cn } from "@/lib/cn";
+import { getRoleStyle } from "@/features/user-management/RoleBadge";
 import type { ApRoleOption, HrmsCandidate, ManagedUser } from "@/features/user-management/types";
 
 const fieldClass =
@@ -396,6 +398,7 @@ export function CreateUserPanel(props: Props) {
           <div className="max-h-[28rem] space-y-2 overflow-y-auto pr-1">
             {creatableRoles.map((role) => {
               const active = role.roleKey === roleKey;
+              const style = getRoleStyle(role.roleKey);
               return (
                 <button
                   key={role.roleKey}
@@ -407,16 +410,18 @@ export function CreateUserPanel(props: Props) {
                     }
                     setError(null);
                   }}
-                  className={`flex w-full items-start gap-3 rounded-lg border px-3 py-2.5 text-left transition ${
+                  className={cn(
+                    "flex w-full items-start gap-3 rounded-lg border px-3 py-2.5 text-left transition",
                     active
-                      ? "border-violet-500 bg-white shadow-sm ring-2 ring-violet-200"
-                      : "border-slate-200 bg-white/80 hover:border-violet-300"
-                  }`}
+                      ? cn(style.cardActive, style.border)
+                      : "border-slate-200 bg-white/80 hover:border-slate-300",
+                  )}
                 >
                   <span
-                    className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md ${
-                      active ? "bg-violet-100 text-violet-800" : "bg-slate-100 text-slate-500"
-                    }`}
+                    className={cn(
+                      "mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md",
+                      active ? cn(style.iconBg, style.iconText) : "bg-slate-100 text-slate-500",
+                    )}
                   >
                     <UserRound className="h-4 w-4" />
                   </span>

@@ -25,6 +25,10 @@ import {
   employeeMatchesFacultyGroupFilter,
   getFacultyGroupFilter,
 } from "./portal-settings.service.js";
+import {
+  ensureStaffUserForSubjectAssignment,
+  syncStaffUserRolesForTimetableChanges,
+} from "./user-management.service.js";
 import type { PoolConnection } from "mysql2/promise";
 
 export type TimetablePlannerFilters = {
@@ -1087,7 +1091,34 @@ export async function getTimetablePlanner(filters: TimetablePlannerFilters = {})
   };
 }
 
-async function resolveFacultyLink(assignment: AssignmentInput) {
+async function resolveFacultyLink(
+  assignment: AssignmentInput,
+  context?: {
+    collegeId?: number | null;
+    branchId?: number | null;
+    actorUserId?: number | null;
+    ipAddress?: string | null;
+  },
+) {
+  if (!assignment.hrmsEmployeeId && !assignment.facultyStaffLinkId) return null;
+
+  if (context?.collegeId) {
+    try {
+      const result = await ensureStaffUserForSubjectAssignment({
+        hrmsEmployeeId: assignment.hrmsEmployeeId ?? null,
+        facultyStaffLinkId: assignment.facultyStaffLinkId ?? null,
+        displayName: assignment.facultyName ?? null,
+        collegeId: context.collegeId,
+        branchId: context.branchId ?? null,
+        actorUserId: context.actorUserId ?? null,
+        ipAddress: context.ipAddress ?? null,
+      });
+      if (result) return result.staffLinkId;
+    } catch (err) {
+      console.warn("Could not ensure staff user profile on resolveFacultyLink", err);
+    }
+  }
+
   if (assignment.facultyStaffLinkId) return assignment.facultyStaffLinkId;
   if (!assignment.hrmsEmployeeId) return null;
   return ensureStaffLink({
@@ -1293,6 +1324,8 @@ export async function saveTimetableDraft(input: {
   section?: string | null;
   notes?: string | null;
   assignments: AssignmentInput[];
+  actorUserId?: number | null;
+  ipAddress?: string | null;
 }) {
   const timing = await getActiveTimingForContext({
     collegeId: input.collegeId,
@@ -1341,13 +1374,20 @@ export async function saveTimetableDraft(input: {
     input.assignments,
   );
 
+  const facultyContext = {
+    collegeId: input.collegeId,
+    branchId: input.branchId,
+    actorUserId: input.actorUserId,
+    ipAddress: input.ipAddress,
+  };
+
   const publishedPlan = await findPublishedPlanForScope(planScopeFromDraftInput(input));
   const timingSlots = await listTimingSlots(timing.id);
   const resolvedAssignments: Array<AssignmentInput & { facultyStaffLinkId: number | null }> = [];
   for (const assignment of verifiedAssignments) {
     resolvedAssignments.push({
       ...assignment,
-      facultyStaffLinkId: await resolveFacultyLink(assignment),
+      facultyStaffLinkId: await resolveFacultyLink(assignment, facultyContext),
     });
   }
 
@@ -1490,11 +1530,26 @@ export async function saveTimetableDraft(input: {
       });
     }
 
+    let previousFacultyIds: number[] = [];
+    if (planId) {
+      const [prevFacRows] = await conn.query<
+        (RowDataPacket & { faculty_staff_link_id: number | null })[]
+      >(
+        `SELECT DISTINCT faculty_staff_link_id FROM ap_timetable_entries WHERE plan_id = ? AND faculty_staff_link_id IS NOT NULL`,
+        [planId],
+      );
+      previousFacultyIds = prevFacRows
+        .map((r) => Number(r.faculty_staff_link_id))
+        .filter((id) => id > 0);
+    }
+
     await conn.execute(`DELETE FROM ap_timetable_entries WHERE plan_id = ?`, [planId]);
 
+    const newFacultyIds = new Set<number>();
     for (const a of verifiedAssignments) {
       const day = toDayCode(String(a.dayOfWeek));
-      const facultyLinkId = await resolveFacultyLink(a);
+      const facultyLinkId = await resolveFacultyLink(a, facultyContext);
+      if (facultyLinkId) newFacultyIds.add(facultyLinkId);
       const customLabel = (a.customLabel ?? "").trim() || null;
       await conn.execute(
         `
@@ -1521,7 +1576,38 @@ export async function saveTimetableDraft(input: {
       );
     }
 
-    return { planId, status: "draft", versionNo, timingTemplateId: timing.id };
+    return {
+      planId,
+      status: "draft",
+      versionNo,
+      timingTemplateId: timing.id,
+      previousFacultyIds,
+      newFacultyIds: [...newFacultyIds],
+    };
+  }).then(async (result) => {
+    // If faculty were removed from this timetable plan, check and sync user roles
+    const removedFacultyIds = result.previousFacultyIds.filter(
+      (id) => !result.newFacultyIds.includes(id),
+    );
+    if (removedFacultyIds.length > 0) {
+      try {
+        await syncStaffUserRolesForTimetableChanges({
+          collegeId: input.collegeId,
+          branchId: input.branchId,
+          candidateStaffLinkIds: removedFacultyIds,
+          actorUserId: input.actorUserId,
+          ipAddress: input.ipAddress,
+        });
+      } catch (err) {
+        console.warn("Could not sync user roles after timetable draft update", err);
+      }
+    }
+    return {
+      planId: result.planId,
+      status: result.status,
+      versionNo: result.versionNo,
+      timingTemplateId: result.timingTemplateId,
+    };
   });
 }
 
@@ -1569,7 +1655,10 @@ export async function reviewTimetablePlan(planId: number) {
   return { planId, status: "in_review", review };
 }
 
-export async function publishTimetablePlan(planId: number) {
+export async function publishTimetablePlan(
+  planId: number,
+  options?: { actorUserId?: number | null; ipAddress?: string | null },
+) {
   const plans = await queryAcademic<PlanRow[]>(
     `SELECT * FROM ap_timetable_plans WHERE id = ? LIMIT 1`,
     [planId],
@@ -1600,7 +1689,59 @@ export async function publishTimetablePlan(planId: number) {
     throw err;
   }
 
+  // Ensure all faculty assigned in the timetable have active user profiles with 'staff' role
+  for (const entry of entries) {
+    if (entry.faculty_staff_link_id) {
+      try {
+        await ensureStaffUserForSubjectAssignment({
+          facultyStaffLinkId: entry.faculty_staff_link_id,
+          collegeId: plan.college_id,
+          branchId: plan.branch_id,
+          actorUserId: options?.actorUserId,
+          ipAddress: options?.ipAddress,
+        });
+      } catch (err) {
+        console.warn("Could not ensure staff user profile on publish for entry faculty", entry.faculty_staff_link_id, err);
+      }
+    }
+  }
+
   return withAcademicTransaction(async (conn) => {
+    // Find faculty in existing published plans that will be superseded
+    const [supersededFacultyRows] = await conn.query<
+      (RowDataPacket & { faculty_staff_link_id: number | null })[]
+    >(
+      `
+      SELECT DISTINCT e.faculty_staff_link_id
+      FROM ap_timetable_entries e
+      INNER JOIN ap_timetable_plans p ON p.id = e.plan_id
+      WHERE p.academic_year_label = ?
+        AND p.college_id = ?
+        AND p.course_id = ?
+        AND p.branch_id = ?
+        AND p.batch = ?
+        AND p.semester_number = ?
+        AND ((? IS NULL AND (p.section_name IS NULL OR p.section_name = '')) OR p.section_name = ?)
+        AND p.status = 'published'
+        AND p.id <> ?
+        AND e.faculty_staff_link_id IS NOT NULL
+      `,
+      [
+        plan.academic_year_label,
+        plan.college_id,
+        plan.course_id,
+        plan.branch_id,
+        plan.batch,
+        plan.semester_number,
+        plan.section_name,
+        plan.section_name,
+        planId,
+      ],
+    );
+    const candidateFacultyIds = supersededFacultyRows
+      .map((r) => Number(r.faculty_staff_link_id))
+      .filter((id) => id > 0);
+
     await conn.execute(
       `
       UPDATE ap_timetable_plans
@@ -1679,6 +1820,29 @@ export async function publishTimetablePlan(planId: number) {
       versionNo: plan.version_no,
       review,
       subjectSnapshotsRefreshed: snapshotRefresh.refreshed,
+      candidateFacultyIds,
+    };
+  }).then(async (result) => {
+    // If faculty were teaching in the superseded plans, check if they have any remaining active teaching assignments
+    if (result.candidateFacultyIds?.length) {
+      try {
+        await syncStaffUserRolesForTimetableChanges({
+          collegeId: plan.college_id,
+          branchId: plan.branch_id,
+          candidateStaffLinkIds: result.candidateFacultyIds,
+          actorUserId: options?.actorUserId,
+          ipAddress: options?.ipAddress,
+        });
+      } catch (err) {
+        console.warn("Could not sync user roles after timetable publish", err);
+      }
+    }
+    return {
+      planId: result.planId,
+      status: result.status,
+      versionNo: result.versionNo,
+      review: result.review,
+      subjectSnapshotsRefreshed: result.subjectSnapshotsRefreshed,
     };
   });
 }
@@ -1716,6 +1880,8 @@ export async function copyTimetablePlan(input: {
     semester: number;
     section?: string | null;
   };
+  actorUserId?: number | null;
+  ipAddress?: string | null;
 }) {
   const sourcePlans = await queryAcademic<PlanRow[]>(
     `SELECT * FROM ap_timetable_plans WHERE id = ? LIMIT 1`,
@@ -1770,6 +1936,8 @@ export async function copyTimetablePlan(input: {
     ...input.target,
     notes: `Copied from plan #${source.id}`,
     assignments,
+    actorUserId: input.actorUserId,
+    ipAddress: input.ipAddress,
   });
 }
 

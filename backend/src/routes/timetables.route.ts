@@ -163,6 +163,8 @@ timetablesRouter.post("/draft", requirePermission("timetable.edit"), async (req:
     const result = await saveTimetableDraft({
       ...body,
       assignments: (body.assignments ?? []) as never[],
+      actorUserId: req.authUser?.id,
+      ipAddress: req.ip,
     });
     res.json(result);
   } catch (error) {
@@ -191,6 +193,8 @@ timetablesRouter.put("/draft/:planId", requirePermission("timetable.edit"), asyn
     const result = await saveTimetableDraft({
       ...body,
       assignments: (body.assignments ?? []) as never[],
+      actorUserId: req.authUser?.id,
+      ipAddress: req.ip,
     });
     res.json(result);
   } catch (error) {
@@ -215,7 +219,10 @@ timetablesRouter.post("/:planId/review", requirePermission("timetable.edit"), as
 timetablesRouter.post("/:planId/publish", requirePermission("timetable.publish"), async (req: AuthedRequest, res, next) => {
   try {
     await assertPlanInScope(req, Number(req.params.planId));
-    const published = await publishTimetablePlan(Number(req.params.planId));
+    const published = await publishTimetablePlan(Number(req.params.planId), {
+      actorUserId: req.authUser?.id,
+      ipAddress: req.ip,
+    });
     await writeAuditLog({
       actorUserId: req.authUser!.id,
       action: "timetable.published",
@@ -274,7 +281,11 @@ timetablesRouter.post("/copy", requirePermission("timetable.edit"), async (req: 
       collegeId: Number(body.target.collegeId),
       branchId: Number(body.target.branchId),
     });
-    res.json(await copyTimetablePlan(body));
+    res.json(await copyTimetablePlan({
+      ...body,
+      actorUserId: req.authUser?.id,
+      ipAddress: req.ip,
+    }));
   } catch (error) {
     sendAuthzError(res, error, next);
   }

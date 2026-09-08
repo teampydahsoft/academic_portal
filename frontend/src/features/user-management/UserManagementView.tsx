@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { UserRound } from "lucide-react";
+import { RefreshCw, UserRound } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -34,6 +34,8 @@ import {
   allMatrixPermissionKeys,
   summarizeRoleAccess,
 } from "@/features/user-management/permission-matrix";
+import { RoleBadge, getRoleStyle } from "@/features/user-management/RoleBadge";
+import { cn } from "@/lib/cn";
 
 type LoadState =
   | { status: "loading" }
@@ -99,6 +101,8 @@ export function UserManagementView() {
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [stats, setStats] = useState({ total: 0, active: 0 });
+  const [syncingTimetables, setSyncingTimetables] = useState(false);
+  const [syncResult, setSyncResult] = useState<{ ok: boolean; message: string } | null>(null);
 
   const colleges = masters?.colleges ?? [];
   const courses = masters?.courses ?? [];
@@ -211,6 +215,34 @@ export function UserManagementView() {
     }
     void loadDetail(selectedId);
   }, [selectedId, loadDetail]);
+
+  const handleSyncTimetables = async () => {
+    if (!canManage) return;
+    setSyncingTimetables(true);
+    setSyncResult(null);
+    try {
+      const response = await apiFetch("/users/sync-timetables", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(data?.message || "Failed to sync timetable users");
+      }
+      setSyncResult({
+        ok: true,
+        message: `Timetable sync complete: ${data.activeTeachingAssignments ?? 0} active assignments checked, ${data.ensuredUsersCount ?? 0} staff accounts verified/created, ${data.cleanedScopesCount ?? 0} stale scopes cleaned, ${data.deactivatedUsersCount ?? 0} users deactivated.`,
+      });
+      await Promise.all([loadUsers(), loadStats()]);
+    } catch (err) {
+      setSyncResult({
+        ok: false,
+        message: err instanceof Error ? err.message : "Sync failed",
+      });
+    } finally {
+      setSyncingTimetables(false);
+    }
+  };
 
   async function setStatusForUser(user: ManagedUser, isActive: boolean) {
     if (!canManage) return;
@@ -330,26 +362,18 @@ export function UserManagementView() {
       render: (row) => {
         const uniqueRoles = uniqueRoleSummaries(row.roles);
         return uniqueRoles.length ? (
-          <div className="flex flex-wrap gap-1">
+          <div className="flex flex-wrap gap-1.5">
             {uniqueRoles.map((role) => (
-              <span
+              <RoleBadge
                 key={role.roleKey}
-                className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-700"
-                title={
-                  role.assignmentCount > 1
-                    ? `${role.assignmentCount} college/branch scopes`
-                    : undefined
-                }
-              >
-                {role.label}
-                {role.assignmentCount > 1 ? (
-                  <span className="text-slate-500"> · {role.assignmentCount} scopes</span>
-                ) : null}
-              </span>
+                roleKey={role.roleKey}
+                label={role.label}
+                assignmentCount={role.assignmentCount}
+              />
             ))}
           </div>
         ) : (
-          <span className="text-slate-400">None</span>
+          <span className="text-xs text-slate-400">None</span>
         );
       },
     },
@@ -376,7 +400,23 @@ export function UserManagementView() {
         title="User Management"
         description="Create and manage users with role-based access. Import staff from the HRMS employees directory, then assign Academic Portal roles and scope here."
         actions={
-          <div className="flex gap-2">
+          <div className="flex items-center gap-2">
+            {canManage ? (
+              <Button
+                variant="secondary"
+                size="sm"
+                className="h-12 border-slate-200 bg-white hover:bg-slate-50 text-navy-800 shadow-sm px-3 text-xs flex items-center gap-2"
+                disabled={syncingTimetables}
+                onClick={handleSyncTimetables}
+                title="Scan all active timetables to ensure teaching staff profiles exist and clean up unassigned roles"
+              >
+                <RefreshCw className={cn("h-4 w-4 text-cyan-600", syncingTimetables && "animate-spin")} />
+                <div className="text-left">
+                  <p className="font-semibold leading-tight text-navy-900">Sync Timetables</p>
+                  <p className="text-[10px] text-slate-500 leading-tight">Update staff roles</p>
+                </div>
+              </Button>
+            ) : null}
             <div className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-center shadow-sm">
               <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">Total</p>
               <p className="text-lg font-semibold text-navy-900">{stats.total}</p>
@@ -388,6 +428,28 @@ export function UserManagementView() {
           </div>
         }
       />
+
+      {syncResult && (
+        <div
+          className={cn(
+            "mb-4 flex items-center justify-between rounded-lg border px-4 py-2.5 text-xs",
+            syncResult.ok
+              ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+              : "border-rose-200 bg-rose-50 text-rose-900",
+          )}
+        >
+          <div className="flex items-center gap-2">
+            <span className="font-medium">{syncResult.message}</span>
+          </div>
+          <button
+            type="button"
+            className="ml-3 font-semibold hover:underline"
+            onClick={() => setSyncResult(null)}
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       <div className="mb-4 flex gap-2 border-b border-border">
         {canManage ? (
@@ -549,15 +611,20 @@ export function UserManagementView() {
                   <MobileDataCardField
                     label="Roles"
                     value={
-                      row.roles.length
-                        ? uniqueRoleSummaries(row.roles)
-                            .map((role) =>
-                              role.assignmentCount > 1
-                                ? `${role.label} (${role.assignmentCount} scopes)`
-                                : role.label,
-                            )
-                            .join(", ")
-                        : "—"
+                      row.roles.length ? (
+                        <div className="mt-0.5 flex flex-wrap gap-1">
+                          {uniqueRoleSummaries(row.roles).map((role) => (
+                            <RoleBadge
+                              key={role.roleKey}
+                              roleKey={role.roleKey}
+                              label={role.label}
+                              assignmentCount={role.assignmentCount}
+                            />
+                          ))}
+                        </div>
+                      ) : (
+                        "—"
+                      )
                     }
                   />
                   <MobileDataCardField
@@ -1103,13 +1170,23 @@ function UserDetailModal(props: {
                   </Button>
                 ) : null}
               </div>
+              <div className="mb-2 flex flex-wrap gap-1.5">
+                {uniqueRoleSummaries(user.roles).map((r) => (
+                  <RoleBadge
+                    key={r.roleKey}
+                    roleKey={r.roleKey}
+                    label={r.label}
+                    assignmentCount={r.assignmentCount}
+                  />
+                ))}
+              </div>
               <p className="mb-3 text-xs text-slate-600">
                 {assignedRoleKeys.size} assigned role{assignedRoleKeys.size === 1 ? "" : "s"} ·{" "}
                 {user.roles.length} scope{user.roles.length === 1 ? "" : "s"}
               </p>
               <div className="max-h-[22rem] space-y-2 overflow-y-auto pr-1">
                 {bootstrapSuperAdmin ? (
-                  <div className="rounded-lg border border-violet-300 bg-white px-3 py-2.5 text-sm text-slate-600">
+                  <div className="rounded-lg border border-purple-300 bg-white px-3 py-2.5 text-sm text-slate-600">
                     System Administrator — global scope (fixed for bootstrap account).
                   </div>
                 ) : displayRoles.length === 0 ? (
@@ -1119,19 +1196,22 @@ function UserDetailModal(props: {
                     const active = assignedRoleKeys.has(role.roleKey);
                     const assignmentCount = user.roles.filter((row) => row.roleKey === role.roleKey)
                       .length;
+                    const style = getRoleStyle(role.roleKey);
                     return (
                       <div
                         key={role.roleKey}
-                        className={`flex w-full items-start gap-3 rounded-lg border px-3 py-2.5 text-left ${
+                        className={cn(
+                          "flex w-full items-start gap-3 rounded-lg border px-3 py-2.5 text-left transition-all",
                           active
-                            ? "border-violet-500 bg-white shadow-sm ring-2 ring-violet-200"
-                            : "border-slate-200 bg-white/80 opacity-70"
-                        }`}
+                            ? cn(style.cardActive, style.border)
+                            : "border-slate-200 bg-white/80 opacity-70",
+                        )}
                       >
                         <span
-                          className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md ${
-                            active ? "bg-violet-100 text-violet-800" : "bg-slate-100 text-slate-400"
-                          }`}
+                          className={cn(
+                            "mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-md",
+                            active ? cn(style.iconBg, style.iconText) : "bg-slate-100 text-slate-400",
+                          )}
                         >
                           <UserRound className="h-4 w-4" />
                         </span>
@@ -1139,7 +1219,12 @@ function UserDetailModal(props: {
                           <span className="flex flex-wrap items-center gap-2">
                             <span className="text-sm font-semibold text-navy-900">{role.label}</span>
                             {active ? (
-                              <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-800">
+                              <span
+                                className={cn(
+                                  "rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+                                  style.pill,
+                                )}
+                              >
                                 Assigned
                               </span>
                             ) : null}
@@ -1151,7 +1236,7 @@ function UserDetailModal(props: {
                                 : "College-scoped access.")}
                           </span>
                           {active && assignmentCount > 0 ? (
-                            <span className="mt-1 block text-[11px] font-medium text-violet-800">
+                            <span className={cn("mt-1 block text-[11px] font-medium", style.iconText)}>
                               {assignmentCount} scope{assignmentCount === 1 ? "" : "s"} assigned
                             </span>
                           ) : null}

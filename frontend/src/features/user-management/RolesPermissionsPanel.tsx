@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { apiFetch } from "@/lib/api";
+import { cn } from "@/lib/cn";
+import { getRoleStyle } from "@/features/user-management/RoleBadge";
 import type { ManagedRole, PermissionCatalogItem } from "@/features/user-management/types";
 import {
   PERMISSION_MATRIX_MODULES,
@@ -402,21 +404,27 @@ export function RolesPermissionsPanel({ canManage }: Props) {
         ) : null}
 
         <div className="flex flex-wrap gap-2">
-          {roles.map((role) => (
-            <button
-              key={role.id}
-              type="button"
-              className={`inline-flex max-w-full items-center gap-2 rounded-full border px-3 py-1.5 text-left text-sm transition-colors ${
-                selectedId === role.id
-                  ? "border-navy-800 bg-navy-800 text-white"
-                  : "border-border bg-white text-navy-900 hover:border-navy-700/40 hover:bg-slate-50"
-              }`}
-              onClick={() => selectRole(role.id)}
-            >
-              <span className="font-medium">{role.label}</span>
-              <StatusBadge status={role.isActive ? "active" : "inactive"} />
-            </button>
-          ))}
+          {roles.map((role) => {
+            const style = getRoleStyle(role.roleKey);
+            const isSelected = selectedId === role.id;
+            return (
+              <button
+                key={role.id}
+                type="button"
+                className={cn(
+                  "inline-flex max-w-full items-center gap-2 rounded-full border px-3 py-1.5 text-left text-sm transition-all",
+                  isSelected
+                    ? "border-navy-900 bg-navy-900 text-white shadow-xs"
+                    : "border-slate-200 bg-white text-navy-900 hover:border-slate-300 hover:bg-slate-50",
+                )}
+                onClick={() => selectRole(role.id)}
+              >
+                <span className={cn("h-2 w-2 rounded-full shrink-0", isSelected ? "bg-white" : style.dot)} />
+                <span className="font-medium">{role.label}</span>
+                <StatusBadge status={role.isActive ? "active" : "inactive"} />
+              </button>
+            );
+          })}
         </div>
       </Card>
 

@@ -1248,3 +1248,467 @@ export async function setUserPermissions(
     newValue: { directPermissions: uniqueKeys, revokedPermissions: finalRevoked },
   });
 }
+
+/**
+ * Ensures that when a subject is assigned to a faculty member (via timetable planner draft, publish, etc.),
+ * an Academic Portal user profile (ap_users) exists with the 'staff' role in ap_user_roles, scoped
+ * to the specified college and branch, and linked in ap_staff_link.
+ */
+export async function ensureStaffUserForSubjectAssignment(input: {
+  hrmsEmployeeId?: string | null;
+  facultyStaffLinkId?: number | null;
+  displayName?: string | null;
+  collegeId: number;
+  branchId?: number | null;
+  actorUserId?: number | null;
+  ipAddress?: string | null;
+}): Promise<{ userId: number; staffLinkId: number; hrmsEmployeeId: string } | null> {
+  let hrmsEmployeeId = text(input.hrmsEmployeeId);
+  let staffLinkId = input.facultyStaffLinkId ? Number(input.facultyStaffLinkId) : null;
+  let employeeCode: string | null = null;
+  let departmentName: string | null = null;
+  let displayName = text(input.displayName);
+
+  // 1. If staffLinkId is provided without hrmsEmployeeId, resolve from ap_staff_link
+  if (!hrmsEmployeeId && staffLinkId) {
+    const linkRows = await queryAcademic<
+      (RowDataPacket & {
+        id: number;
+        hrms_employee_id: string;
+        display_name: string | null;
+        department_name: string | null;
+        employee_code: string | null;
+      })[]
+    >(
+      `SELECT id, hrms_employee_id, display_name, department_name, employee_code FROM ap_staff_link WHERE id = ? LIMIT 1`,
+      [staffLinkId],
+    );
+    if (linkRows[0]) {
+      hrmsEmployeeId = text(linkRows[0].hrms_employee_id);
+      if (!displayName) displayName = text(linkRows[0].display_name);
+      departmentName = text(linkRows[0].department_name);
+      employeeCode = text(linkRows[0].employee_code);
+    }
+  }
+
+  if (!hrmsEmployeeId) {
+    return null;
+  }
+
+  // 2. Look up HRMS employee doc for profile metadata (name, email, department, code)
+  let empDoc: Record<string, unknown> | null = null;
+  try {
+    empDoc = await findHrmsEmployeeByKey(hrmsEmployeeId);
+  } catch (err) {
+    console.warn("Could not query HRMS for employee key", hrmsEmployeeId, err);
+  }
+
+  let email: string | null = null;
+  let name = displayName;
+  if (empDoc) {
+    try {
+      const db = await getHrmsDb();
+      const lookups = await loadHrmsOrgLookups(db);
+      const profile = extractHrmsStaffProfile(empDoc, lookups);
+      if (!name) name = profile.name;
+      if (!departmentName && profile.department !== "—") departmentName = profile.department;
+      email = extractEmployeeEmail(empDoc);
+      employeeCode = text(empDoc.emp_no ?? empDoc.employeeId ?? empDoc.employeeCode) ?? employeeCode;
+    } catch (err) {
+      console.warn("Could not extract HRMS profile for", hrmsEmployeeId, err);
+    }
+  }
+
+  if (!name) {
+    name = `Staff ${hrmsEmployeeId}`;
+  }
+
+  // 3. Ensure ap_staff_link row exists
+  if (!staffLinkId) {
+    const existingLink = await queryAcademic<(RowDataPacket & { id: number })[]>(
+      `SELECT id FROM ap_staff_link WHERE hrms_employee_id = ? LIMIT 1`,
+      [hrmsEmployeeId],
+    );
+    if (existingLink[0]?.id) {
+      staffLinkId = Number(existingLink[0].id);
+    } else {
+      const linkResult = await executeAcademic(
+        `
+        INSERT INTO ap_staff_link (hrms_employee_id, employee_code, display_name, department_name)
+        VALUES (?, ?, ?, ?)
+        `,
+        [hrmsEmployeeId, employeeCode, name, departmentName],
+      );
+      staffLinkId = Number(linkResult.insertId);
+    }
+  }
+
+  // 4. Ensure ap_users row exists
+  const existingUserRows = await queryAcademic<ApUserRow[]>(
+    `
+    SELECT id, name, email, username, hrms_employee_id, password_hash, is_active
+    FROM ap_users
+    WHERE hrms_employee_id = ?
+    LIMIT 1
+    `,
+    [hrmsEmployeeId],
+  );
+
+  let userId: number;
+
+  if (existingUserRows[0]) {
+    userId = Number(existingUserRows[0].id);
+    if (Number(existingUserRows[0].is_active) === 0) {
+      await executeAcademic(
+        `UPDATE ap_users SET is_active = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+        [userId],
+      );
+    }
+  } else {
+    // Check if an existing unlinked user exists with the same email or username
+    const username = email || `emp_${hrmsEmployeeId}`;
+    const matchRows = await queryAcademic<ApUserRow[]>(
+      `
+      SELECT id, name, email, username, hrms_employee_id, password_hash, is_active
+      FROM ap_users
+      WHERE (email IS NOT NULL AND email = ?) OR username = ?
+      LIMIT 1
+      `,
+      [email, username],
+    );
+
+    if (matchRows[0]) {
+      userId = Number(matchRows[0].id);
+      await executeAcademic(
+        `UPDATE ap_users SET hrms_employee_id = ?, is_active = 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+        [hrmsEmployeeId, userId],
+      );
+    } else {
+      const inserted = await executeAcademic(
+        `
+        INSERT INTO ap_users (name, email, username, password_hash, hrms_employee_id, is_active)
+        VALUES (?, ?, ?, NULL, ?, 1)
+        `,
+        [name, email, username, hrmsEmployeeId],
+      );
+      userId = Number(inserted.insertId);
+
+      await writeAuditLog({
+        actorUserId: input.actorUserId ?? userId,
+        action: "user.auto_created",
+        entityType: "ap_user",
+        entityId: userId,
+        newValue: {
+          hrmsEmployeeId,
+          name,
+          email,
+          username,
+          roleKey: "staff",
+          collegeId: input.collegeId,
+          branchId: input.branchId ?? null,
+          trigger: "subject_assignment",
+        },
+        ipAddress: input.ipAddress ?? null,
+      });
+    }
+  }
+
+  // 5. Ensure the 'staff' role is assigned in ap_user_roles with the target scope
+  const roleId = await getRoleId("staff");
+  const targetCollegeId = input.collegeId ? Number(input.collegeId) : null;
+  const targetBranchId = input.branchId ? Number(input.branchId) : null;
+
+  const existingRoles = await queryAcademic<
+    (RowDataPacket & { id: number; college_id: number | null; branch_id: number | null })[]
+  >(
+    `SELECT id, college_id, branch_id FROM ap_user_roles WHERE user_id = ? AND role_id = ?`,
+    [userId, roleId],
+  );
+
+  const alreadyCovered = existingRoles.some((r) => {
+    // Global scope covers all
+    if (r.college_id == null && r.branch_id == null) return true;
+    // Matching college with all branches covers specific branch
+    if (targetCollegeId != null && r.college_id === targetCollegeId && r.branch_id == null) return true;
+    // Exact match on college and branch
+    if (r.college_id === targetCollegeId && r.branch_id === targetBranchId) return true;
+    return false;
+  });
+
+  if (!alreadyCovered) {
+    await executeAcademic(
+      `
+      INSERT INTO ap_user_roles (user_id, role_id, college_id, branch_id)
+      VALUES (?, ?, ?, ?)
+      ON DUPLICATE KEY UPDATE role_id = VALUES(role_id)
+      `,
+      [userId, roleId, targetCollegeId, targetBranchId],
+    );
+
+    await writeAuditLog({
+      actorUserId: input.actorUserId ?? userId,
+      action: "role.assigned",
+      entityType: "ap_user",
+      entityId: userId,
+      newValue: {
+        roleKey: "staff",
+        collegeId: targetCollegeId,
+        branchId: targetBranchId,
+        trigger: "subject_assignment",
+      },
+      ipAddress: input.ipAddress ?? null,
+    });
+  }
+
+  invalidateAuthzCache({ userId });
+
+  return { userId, staffLinkId, hrmsEmployeeId };
+}
+
+/**
+ * Synchronizes user management roles when timetable assignments have changed.
+ * For any candidate faculty who may have been removed from a college/branch timetable:
+ * checks whether they have any remaining active teaching assignments in that college/branch.
+ * If not, removes the college/branch scope for the 'staff' role in ap_user_roles.
+ * If the user has 0 roles remaining, marks the user inactive in ap_users.
+ */
+export async function syncStaffUserRolesForTimetableChanges(input: {
+  collegeId: number;
+  branchId: number;
+  candidateStaffLinkIds: number[];
+  actorUserId?: number | null;
+  ipAddress?: string | null;
+}): Promise<{ removedScopesCount: number; deactivatedUsersCount: number }> {
+  const staffLinkIds = [...new Set(input.candidateStaffLinkIds.map(Number).filter((id) => id > 0))];
+  if (!staffLinkIds.length) {
+    return { removedScopesCount: 0, deactivatedUsersCount: 0 };
+  }
+
+  const roleId = await getRoleId("staff");
+  let removedScopesCount = 0;
+  let deactivatedUsersCount = 0;
+
+  for (const staffLinkId of staffLinkIds) {
+    // Check if this faculty member has any remaining timetable entries in active plans for this college/branch
+    const countRows = await queryAcademic<(RowDataPacket & { total: number })[]>(
+      `
+      SELECT COUNT(*) AS total
+      FROM ap_timetable_entries e
+      INNER JOIN ap_timetable_plans p ON p.id = e.plan_id
+      WHERE e.faculty_staff_link_id = ?
+        AND p.college_id = ?
+        AND p.branch_id = ?
+        AND p.status IN ('published', 'draft', 'in_review')
+      `,
+      [staffLinkId, input.collegeId, input.branchId],
+    );
+
+    const remainingInScope = Number(countRows[0]?.total ?? 0);
+    if (remainingInScope > 0) {
+      continue;
+    }
+
+    // Find portal user linked to this staff link
+    const userRows = await queryAcademic<(RowDataPacket & { id: number; name: string; is_active: number })[]>(
+      `
+      SELECT u.id, u.name, u.is_active
+      FROM ap_staff_link sl
+      INNER JOIN ap_users u ON u.hrms_employee_id = sl.hrms_employee_id
+      WHERE sl.id = ?
+      LIMIT 1
+      `,
+      [staffLinkId],
+    );
+
+    if (!userRows[0]) continue;
+    const userId = Number(userRows[0].id);
+
+    // Delete role assignment for this specific college/branch
+    const deleteResult = await executeAcademic(
+      `
+      DELETE FROM ap_user_roles
+      WHERE user_id = ?
+        AND role_id = ?
+        AND college_id = ?
+        AND branch_id = ?
+      `,
+      [userId, roleId, input.collegeId, input.branchId],
+    );
+
+    if (deleteResult.affectedRows > 0) {
+      removedScopesCount++;
+
+      await writeAuditLog({
+        actorUserId: input.actorUserId ?? userId,
+        action: "role.auto_removed",
+        entityType: "ap_user",
+        entityId: userId,
+        newValue: {
+          roleKey: "staff",
+          collegeId: input.collegeId,
+          branchId: input.branchId,
+          reason: "timetable_assignment_removed",
+        },
+        ipAddress: input.ipAddress ?? null,
+      });
+
+      // Check if user has any remaining roles
+      const remainingRoles = await queryAcademic<(RowDataPacket & { c: number })[]>(
+        `SELECT COUNT(*) AS c FROM ap_user_roles WHERE user_id = ?`,
+        [userId],
+      );
+
+      if (Number(remainingRoles[0]?.c ?? 0) === 0) {
+        await executeAcademic(
+          `UPDATE ap_users SET is_active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+          [userId],
+        );
+        deactivatedUsersCount++;
+
+        await writeAuditLog({
+          actorUserId: input.actorUserId ?? userId,
+          action: "user.auto_deactivated",
+          entityType: "ap_user",
+          entityId: userId,
+          newValue: {
+            reason: "no_roles_remaining_after_timetable_change",
+          },
+          ipAddress: input.ipAddress ?? null,
+        });
+      }
+
+      invalidateAuthzCache({ userId });
+    }
+  }
+
+  return { removedScopesCount, deactivatedUsersCount };
+}
+
+/**
+ * Sweeps all active timetable plans across the portal to ensure user management is fully in sync:
+ * 1. Ensures every faculty teaching in an active plan has an ap_users account with the 'staff' role for that scope.
+ * 2. Cleans up stale branch-scoped 'staff' assignments for faculty who no longer have active classes in that scope.
+ */
+export async function syncAllTimetableStaffUsers(input?: {
+  actorUserId?: number | null;
+  ipAddress?: string | null;
+}): Promise<{
+  activeTeachingAssignments: number;
+  ensuredUsersCount: number;
+  cleanedScopesCount: number;
+  deactivatedUsersCount: number;
+}> {
+  // 1. Fetch all distinct faculty teaching assignments in active plans
+  const activeAssignments = await queryAcademic<
+    (RowDataPacket & {
+      faculty_staff_link_id: number;
+      college_id: number;
+      branch_id: number;
+    })[]
+  >(
+    `
+    SELECT DISTINCT e.faculty_staff_link_id, p.college_id, p.branch_id
+    FROM ap_timetable_entries e
+    INNER JOIN ap_timetable_plans p ON p.id = e.plan_id
+    WHERE e.faculty_staff_link_id IS NOT NULL
+      AND p.status IN ('published', 'draft', 'in_review')
+    `,
+  );
+
+  let ensuredUsersCount = 0;
+  for (const row of activeAssignments) {
+    try {
+      const res = await ensureStaffUserForSubjectAssignment({
+        facultyStaffLinkId: Number(row.faculty_staff_link_id),
+        collegeId: Number(row.college_id),
+        branchId: Number(row.branch_id),
+        actorUserId: input?.actorUserId,
+        ipAddress: input?.ipAddress,
+      });
+      if (res) ensuredUsersCount++;
+    } catch (err) {
+      console.warn("Could not sync staff user for link", row.faculty_staff_link_id, err);
+    }
+  }
+
+  // 2. Find all existing staff role assignments with specific college & branch
+  const staffRoleRows = await queryAcademic<(RowDataPacket & { id: number })[]>(
+    `SELECT id FROM ap_roles WHERE role_key = 'staff' LIMIT 1`,
+  );
+  const staffRoleId = staffRoleRows[0]?.id ? Number(staffRoleRows[0].id) : null;
+
+  let cleanedScopesCount = 0;
+  let deactivatedUsersCount = 0;
+
+  if (staffRoleId) {
+    const existingStaffAssignments = await queryAcademic<
+      (RowDataPacket & {
+        user_id: number;
+        college_id: number;
+        branch_id: number;
+        staff_link_id: number | null;
+      })[]
+    >(
+      `
+      SELECT ur.user_id, ur.college_id, ur.branch_id, sl.id AS staff_link_id
+      FROM ap_user_roles ur
+      INNER JOIN ap_users u ON u.id = ur.user_id
+      LEFT JOIN ap_staff_link sl ON sl.hrms_employee_id = u.hrms_employee_id
+      WHERE ur.role_id = ?
+        AND ur.college_id IS NOT NULL
+        AND ur.branch_id IS NOT NULL
+      `,
+      [staffRoleId],
+    );
+
+    for (const assignment of existingStaffAssignments) {
+      if (!assignment.staff_link_id) continue;
+
+      const countRows = await queryAcademic<(RowDataPacket & { total: number })[]>(
+        `
+        SELECT COUNT(*) AS total
+        FROM ap_timetable_entries e
+        INNER JOIN ap_timetable_plans p ON p.id = e.plan_id
+        WHERE e.faculty_staff_link_id = ?
+          AND p.college_id = ?
+          AND p.branch_id = ?
+          AND p.status IN ('published', 'draft', 'in_review')
+        `,
+        [assignment.staff_link_id, assignment.college_id, assignment.branch_id],
+      );
+
+      if (Number(countRows[0]?.total ?? 0) === 0) {
+        await executeAcademic(
+          `
+          DELETE FROM ap_user_roles
+          WHERE user_id = ? AND role_id = ? AND college_id = ? AND branch_id = ?
+          `,
+          [assignment.user_id, staffRoleId, assignment.college_id, assignment.branch_id],
+        );
+        cleanedScopesCount++;
+
+        const remaining = await queryAcademic<(RowDataPacket & { c: number })[]>(
+          `SELECT COUNT(*) AS c FROM ap_user_roles WHERE user_id = ?`,
+          [assignment.user_id],
+        );
+        if (Number(remaining[0]?.c ?? 0) === 0) {
+          await executeAcademic(
+            `UPDATE ap_users SET is_active = 0, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
+            [assignment.user_id],
+          );
+          deactivatedUsersCount++;
+        }
+        invalidateAuthzCache({ userId: assignment.user_id });
+      }
+    }
+  }
+
+  return {
+    activeTeachingAssignments: activeAssignments.length,
+    ensuredUsersCount,
+    cleanedScopesCount,
+    deactivatedUsersCount,
+  };
+}
+
+

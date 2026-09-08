@@ -13,6 +13,7 @@ import {
   updateManagedUserProfile,
   updateUserAssignmentScope,
   setUserPermissions,
+  syncAllTimetableStaffUsers,
 } from "../services/user-management.service.js";
 
 export const usersRouter = Router();
@@ -96,6 +97,26 @@ usersRouter.get(
     try {
       const q = str(req.query.q) ?? "";
       res.json({ data: await searchHrmsCandidates(q, num(req.query.limit) ?? 20) });
+    } catch (error) {
+      sendError(res, error, next);
+    }
+  },
+);
+
+usersRouter.post(
+  "/sync-timetables",
+  requirePermission("user_management.manage_users"),
+  async (req: AuthedRequest, res, next) => {
+    try {
+      const result = await syncAllTimetableStaffUsers({
+        actorUserId: req.authUser?.id,
+        ipAddress: req.ip,
+      });
+      res.json({
+        ok: true,
+        message: "Timetable staff users synchronized successfully",
+        ...result,
+      });
     } catch (error) {
       sendError(res, error, next);
     }
