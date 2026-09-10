@@ -59,7 +59,9 @@ export function AcademicFilterBar({ title = "Filters" }: Props) {
   const showStudentQuerySearch = showSearch || isMentoringPage;
   const isTimetablesPage =
     pathname === "/timetables" || pathname.startsWith("/timetables/");
-  const usesBatchProgressYear = isTimetablesPage || isMentoringPage;
+  const isAttendanceAnalytics =
+    pathname === "/attendance-analytics" || pathname.startsWith("/attendance-analytics");
+  const usesBatchProgressYear = isTimetablesPage || isMentoringPage || isAttendanceAnalytics;
 
   useEffect(() => {
     setSearchDraft(filters.q);
@@ -242,8 +244,9 @@ export function AcademicFilterBar({ title = "Filters" }: Props) {
 
   // On Students, batch already scopes the cohort — Year / Semester are redundant.
   // On Timetables / Mentoring, batch triggers auto year+semester from batch progress (read-only).
+  // On Attendance Analytics, batch auto-prefills Year + Semester on initial state, but keeps them selectable.
   const autoYearSemesterFromBatch =
-    usesBatchProgressYear &&
+    (isTimetablesPage || isMentoringPage) &&
     filters.batch !== "all" &&
     filters.collegeId !== "all" &&
     filters.courseId !== "all" &&

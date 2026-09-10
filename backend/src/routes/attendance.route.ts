@@ -11,6 +11,10 @@ import { ownTeachingStaffLinkId } from "../authz/faculty-self-scope.js";
 import {
   getAttendanceAnalytics,
   getAttendanceSession,
+  getDailyAttendanceAnalytics,
+  getWeeklyAttendanceAnalytics,
+  getMonthlyAttendanceAnalytics,
+  getSemesterAttendanceAnalytics,
   listAttendanceSessions,
   postAttendance,
   type AttendanceMark,
@@ -133,6 +137,143 @@ attendanceRouter.get(
           branchId: scoped.branchId,
           branchIds: scoped.branchIds,
           section: str(req.query.section),
+        }),
+      );
+    } catch (error) {
+      const status = statusFromAuthzError(error);
+      if (status === 401 || status === 403) {
+        res.status(status).json({ message: (error as Error).message || "Forbidden" });
+        return;
+      }
+      next(error);
+    }
+  },
+);
+
+attendanceRouter.get(
+  "/analytics/daily",
+  requirePermission("attendance_analytics.view", "attendance.view"),
+  async (req: AuthedRequest, res, next) => {
+    try {
+      const scoped = scopedQuery(req);
+      const facultyStaffLinkId = await facultyFilter(req);
+      const isStaff = facultyStaffLinkId != null;
+      res.json(
+        await getDailyAttendanceAnalytics({
+          date: str(req.query.date),
+          collegeId: isStaff ? undefined : scoped.collegeId,
+          collegeIds: isStaff ? undefined : scoped.collegeIds,
+          courseId: isStaff ? undefined : num(req.query.courseId),
+          branchId: isStaff ? undefined : scoped.branchId,
+          branchIds: isStaff ? undefined : scoped.branchIds,
+          batch: isStaff ? undefined : str(req.query.batch),
+          year: isStaff ? undefined : num(req.query.year),
+          semester: isStaff ? undefined : num(req.query.semester),
+          section: isStaff ? undefined : str(req.query.section),
+          academicYear: isStaff ? undefined : str(req.query.academicYear),
+        }),
+      );
+    } catch (error) {
+      const status = statusFromAuthzError(error);
+      if (status === 401 || status === 403) {
+        res.status(status).json({ message: (error as Error).message || "Forbidden" });
+        return;
+      }
+      next(error);
+    }
+  },
+);
+
+attendanceRouter.get(
+  "/analytics/week",
+  requirePermission("attendance_analytics.view", "attendance.view"),
+  async (req: AuthedRequest, res, next) => {
+    try {
+      const scoped = scopedQuery(req);
+      const facultyStaffLinkId = await facultyFilter(req);
+      const isStaff = facultyStaffLinkId != null;
+      res.json(
+        await getWeeklyAttendanceAnalytics({
+          date: str(req.query.date),
+          startDate: str(req.query.startDate),
+          collegeId: isStaff ? undefined : scoped.collegeId,
+          collegeIds: isStaff ? undefined : scoped.collegeIds,
+          courseId: isStaff ? undefined : num(req.query.courseId),
+          branchId: isStaff ? undefined : scoped.branchId,
+          branchIds: isStaff ? undefined : scoped.branchIds,
+          batch: isStaff ? undefined : str(req.query.batch),
+          year: isStaff ? undefined : num(req.query.year),
+          semester: isStaff ? undefined : num(req.query.semester),
+          section: isStaff ? undefined : str(req.query.section),
+          academicYear: isStaff ? undefined : str(req.query.academicYear),
+        }),
+      );
+    } catch (error) {
+      const status = statusFromAuthzError(error);
+      if (status === 401 || status === 403) {
+        res.status(status).json({ message: (error as Error).message || "Forbidden" });
+        return;
+      }
+      next(error);
+    }
+  },
+);
+
+attendanceRouter.get(
+  "/analytics/monthly",
+  requirePermission("attendance_analytics.view", "attendance.view"),
+  async (req: AuthedRequest, res, next) => {
+    try {
+      const scoped = scopedQuery(req);
+      const facultyStaffLinkId = await facultyFilter(req);
+      const isStaff = facultyStaffLinkId != null;
+      res.json(
+        await getMonthlyAttendanceAnalytics({
+          month: num(req.query.month),
+          year: num(req.query.year),
+          collegeId: isStaff ? undefined : scoped.collegeId,
+          collegeIds: isStaff ? undefined : scoped.collegeIds,
+          courseId: isStaff ? undefined : num(req.query.courseId),
+          branchId: isStaff ? undefined : scoped.branchId,
+          branchIds: isStaff ? undefined : scoped.branchIds,
+          batch: isStaff ? undefined : str(req.query.batch),
+          yearOfStudy: isStaff ? undefined : num(req.query.year),
+          semester: isStaff ? undefined : num(req.query.semester),
+          section: isStaff ? undefined : str(req.query.section),
+          academicYear: isStaff ? undefined : str(req.query.academicYear),
+        }),
+      );
+    } catch (error) {
+      const status = statusFromAuthzError(error);
+      if (status === 401 || status === 403) {
+        res.status(status).json({ message: (error as Error).message || "Forbidden" });
+        return;
+      }
+      next(error);
+    }
+  },
+);
+
+attendanceRouter.get(
+  "/analytics/semester",
+  requirePermission("attendance_analytics.view", "attendance.view"),
+  async (req: AuthedRequest, res, next) => {
+    try {
+      const scoped = scopedQuery(req);
+      const facultyStaffLinkId = await facultyFilter(req);
+      const isStaff = facultyStaffLinkId != null;
+      res.json(
+        await getSemesterAttendanceAnalytics({
+          semester: num(req.query.semester),
+          academicYear: str(req.query.academicYear),
+          collegeId: isStaff ? undefined : scoped.collegeId,
+          collegeIds: isStaff ? undefined : scoped.collegeIds,
+          courseId: isStaff ? undefined : num(req.query.courseId),
+          branchId: isStaff ? undefined : scoped.branchId,
+          branchIds: isStaff ? undefined : scoped.branchIds,
+          batch: isStaff ? undefined : str(req.query.batch),
+          yearOfStudy: isStaff ? undefined : num(req.query.year),
+          section: isStaff ? undefined : str(req.query.section),
         }),
       );
     } catch (error) {

@@ -191,7 +191,11 @@ export async function listAttendanceSessions(filters: AttendanceListFilters) {
     });
   }
 
-  const where = ["cs.session_date = ?", "cs.status <> 'cancelled'"];
+  const where = [
+    "cs.session_date = ?",
+    "cs.status <> 'cancelled'",
+    "(p.status = 'published' OR ap.id IS NOT NULL)",
+  ];
   const params: unknown[] = [date];
 
   if (filters.collegeId) {
@@ -913,6 +917,1492 @@ export async function getAttendanceAnalytics(filters: {
   };
 }
 
+export async function loadScopeStudents(filters: {
+  collegeId?: number;
+  collegeIds?: number[];
+  courseId?: number;
+  branchId?: number;
+  branchIds?: number[];
+  batch?: string;
+  year?: number;
+  semester?: number;
+  section?: string;
+}) {
+  const where = [
+    `(s.student_status IS NULL OR (
+      LOWER(TRIM(s.student_status)) NOT IN ('relieved', 'discontinued', 'inactive', 'cancelled', 'admission cancelled')
+      AND LOWER(s.student_status) NOT LIKE '%cancel%'
+    ))`,
+  ];
+  const params: unknown[] = [];
+
+  if (filters.branchId) {
+    where.push("s.branch_id = ?");
+    params.push(filters.branchId);
+  } else if (filters.branchIds?.length) {
+    where.push(`s.branch_id IN (${filters.branchIds.map(() => "?").join(",")})`);
+    params.push(...filters.branchIds);
+  }
+  if (filters.collegeId) {
+    where.push("s.college_id = ?");
+    params.push(filters.collegeId);
+  } else if (filters.collegeIds?.length) {
+    where.push(`s.college_id IN (${filters.collegeIds.map(() => "?").join(",")})`);
+    params.push(...filters.collegeIds);
+  }
+  if (filters.courseId) {
+    where.push("s.course_id = ?");
+    params.push(filters.courseId);
+  }
+  if (filters.batch) {
+    where.push("TRIM(s.batch) = ?");
+    params.push(filters.batch);
+  } else {
+    if (filters.year != null) {
+      where.push("s.current_year = ?");
+      params.push(filters.year);
+    }
+    if (filters.semester != null) {
+      where.push("s.current_semester = ?");
+      params.push(filters.semester);
+    }
+  }
+  if (filters.section) {
+    where.push(`
+      TRIM(COALESCE(
+        ss.section_name COLLATE utf8mb4_unicode_ci,
+        s.section COLLATE utf8mb4_unicode_ci,
+        '' COLLATE utf8mb4_unicode_ci
+      )) = TRIM(?) COLLATE utf8mb4_unicode_ci
+    `);
+    params.push(filters.section);
+  }
+
+  return queryStudent<StudentRow[]>(
+    `
+    SELECT s.id, s.admission_number, s.pin_no, s.student_name, s.course, s.branch, s.current_year, s.current_semester,
+           CASE WHEN s.student_photo IS NOT NULL AND TRIM(s.student_photo) <> '' THEN 1 ELSE 0 END AS has_photo
+    FROM students s
+    LEFT JOIN student_sections ss ON ss.student_id = s.id
+    WHERE ${where.join(" AND ")}
+    GROUP BY s.id, s.admission_number, s.pin_no, s.student_name, s.course, s.branch, s.current_year, s.current_semester
+    ORDER BY COALESCE(NULLIF(TRIM(s.pin_no), ''), s.admission_number), s.student_name
+    LIMIT 1000
+    `,
+    params,
+  );
+}
+
+export type DailyAttendanceAnalyticsResult = {
+  date: string;
+  section: string | null;
+  availableSections: string[];
+  slots: Array<{
+    sessionId: number;
+    slotLabel: string;
+    startTime: string;
+    endTime: string;
+    time: string;
+    subjectId: number | null;
+    subjectCode: string | null;
+    subjectName: string | null;
+    facultyName: string | null;
+    roomLabel: string | null;
+    status: string;
+    posted: boolean;
+    postId: number | null;
+    presentCount: number;
+    absentCount: number;
+    odCount: number;
+    leaveCount: number;
+  }>;
+  students: Array<{
+    id: string;
+    studentDbId: number;
+    name: string;
+    pinNo: string | null;
+    admissionNo: string;
+    course: string | null;
+    branch: string | null;
+    year: number | null;
+    semester: number | null;
+    hasPhoto: boolean;
+    slots: Record<
+      number,
+      {
+        sessionId: number;
+        status: AttendanceMark | "pending" | "unposted";
+        remarks: string | null;
+      }
+    >;
+    totalPresent: number;
+    totalAbsent: number;
+    totalOd: number;
+    totalLeave: number;
+    totalConducted: number;
+    totalSlots: number;
+    percentage: number | null;
+  }>;
+  summary: {
+    totalStudents: number;
+    totalSlots: number;
+    postedSlots: number;
+    pendingSlots: number;
+    totalPresentMarks: number;
+    totalAbsentMarks: number;
+    avgAttendancePct: number;
+  };
+};
+
+export async function getDailyAttendanceAnalytics(filters: {
+  date?: string;
+  collegeId?: number;
+  collegeIds?: number[];
+  courseId?: number;
+  branchId?: number;
+  branchIds?: number[];
+  batch?: string;
+  year?: number;
+  semester?: number;
+  section?: string;
+  academicYear?: string;
+}): Promise<DailyAttendanceAnalyticsResult> {
+  const date = filters.date && /^\d{4}-\d{2}-\d{2}$/.test(filters.date) ? filters.date : todayIso();
+
+  // Pre-generate sessions for today or past dates within the current semester if missing
+  if (date <= todayIso()) {
+    await ensureSessionsForDate(date, {
+      collegeId: filters.collegeId,
+      courseId: filters.courseId,
+      branchId: filters.branchId,
+      batch: filters.batch,
+      year: filters.year,
+      semester: filters.semester,
+      section: filters.section,
+      academicYear: filters.academicYear,
+    }).catch(() => null);
+  }
+
+  const where = [
+    "cs.session_date = ?",
+    "cs.status <> 'cancelled'",
+    "(p.status = 'published' OR ap.id IS NOT NULL)",
+  ];
+  const params: unknown[] = [date];
+
+  if (filters.collegeId) {
+    where.push("cs.college_id = ?");
+    params.push(filters.collegeId);
+  } else if (filters.collegeIds?.length) {
+    where.push(`cs.college_id IN (${filters.collegeIds.map(() => "?").join(",")})`);
+    params.push(...filters.collegeIds);
+  }
+  if (filters.courseId) {
+    where.push("p.course_id = ?");
+    params.push(filters.courseId);
+  }
+  if (filters.branchId) {
+    where.push("cs.branch_id = ?");
+    params.push(filters.branchId);
+  } else if (filters.branchIds?.length) {
+    where.push(`cs.branch_id IN (${filters.branchIds.map(() => "?").join(",")})`);
+    params.push(...filters.branchIds);
+  }
+  if (filters.batch) {
+    where.push("p.batch = ?");
+    params.push(filters.batch);
+  }
+  if (filters.year != null) {
+    where.push("p.year_of_study = ?");
+    params.push(filters.year);
+  }
+  if (filters.semester != null) {
+    where.push("p.semester_number = ?");
+    params.push(filters.semester);
+  }
+  if (filters.academicYear) {
+    where.push("p.academic_year_label = ?");
+    params.push(filters.academicYear);
+  }
+
+  const allDaySessions = await queryAcademic<SessionListRow[]>(
+    `
+    SELECT
+      cs.id,
+      cs.plan_id,
+      cs.session_date,
+      cs.day_of_week,
+      cs.start_time,
+      cs.end_time,
+      cs.section_name,
+      cs.college_id,
+      p.course_id,
+      cs.branch_id,
+      p.batch,
+      p.year_of_study,
+      p.semester_number,
+      cs.subject_id,
+      cs.subject_code,
+      cs.subject_name,
+      cs.subject_type_snapshot,
+      cs.faculty_staff_link_id,
+      sl.display_name AS faculty_name,
+      cs.room_label,
+      COALESCE(ts.label, CONCAT('P', cs.period_slot_id)) AS slot_label,
+      cs.status,
+      ap.id AS post_id,
+      ap.present_count,
+      ap.absent_count,
+      ap.od_count,
+      ap.leave_count
+    FROM ap_class_sessions cs
+    INNER JOIN ap_timetable_plans p ON p.id = cs.plan_id
+    LEFT JOIN ap_staff_link sl ON sl.id = cs.faculty_staff_link_id
+    LEFT JOIN ap_timing_template_slots ts
+      ON ts.id = COALESCE(cs.timing_slot_id, cs.period_slot_id)
+    LEFT JOIN ap_attendance_posts ap ON ap.class_session_id = cs.id
+    WHERE ${where.join(" AND ")}
+    ORDER BY cs.start_time, cs.id
+    `,
+    params,
+  );
+
+  const availableSections = Array.from(
+    new Set(allDaySessions.map((r) => r.section_name).filter(Boolean)),
+  ) as string[];
+
+  const activeSection =
+    filters.section && filters.section !== "all"
+      ? filters.section
+      : availableSections.length > 0
+        ? availableSections[0]
+        : null;
+
+  const sectionSessions = activeSection
+    ? allDaySessions.filter(
+        (r) =>
+          (r.section_name || "").trim().toLowerCase() ===
+          activeSection.trim().toLowerCase(),
+      )
+    : allDaySessions;
+
+  // Load roster students
+  const students = await loadScopeStudents({
+    collegeId: filters.collegeId,
+    collegeIds: filters.collegeIds,
+    courseId: filters.courseId,
+    branchId: filters.branchId,
+    branchIds: filters.branchIds,
+    batch: filters.batch,
+    year: filters.year,
+    semester: filters.semester,
+    section: activeSection || undefined,
+  });
+
+  const slots = sectionSessions.map((row) => ({
+    sessionId: Number(row.id),
+    slotLabel: row.slot_label || `Period ${row.period_slot_id || ""}`.trim(),
+    startTime: row.start_time ? String(row.start_time).slice(0, 5) : "",
+    endTime: row.end_time ? String(row.end_time).slice(0, 5) : "",
+    time: [
+      row.start_time ? String(row.start_time).slice(0, 5) : "",
+      row.end_time ? String(row.end_time).slice(0, 5) : "",
+    ]
+      .filter(Boolean)
+      .join(" – "),
+    subjectId: row.subject_id ? Number(row.subject_id) : null,
+    subjectCode: row.subject_code || null,
+    subjectName: row.subject_name || null,
+    facultyName: row.faculty_name || null,
+    roomLabel: row.room_label || null,
+    status: row.status,
+    posted: Boolean(row.post_id),
+    postId: row.post_id ? Number(row.post_id) : null,
+    presentCount: Number(row.present_count ?? 0),
+    absentCount: Number(row.absent_count ?? 0),
+    odCount: Number(row.od_count ?? 0),
+    leaveCount: Number(row.leave_count ?? 0),
+  }));
+
+  const postIds = slots.map((s) => s.postId).filter(Boolean) as number[];
+  type MarkRow = RowDataPacket & {
+    attendance_post_id: number;
+    student_db_id: number;
+    status: AttendanceMark;
+    remarks: string | null;
+  };
+
+  const marks =
+    postIds.length > 0
+      ? await queryAcademic<MarkRow[]>(
+          `
+          SELECT attendance_post_id, student_db_id, status, remarks
+          FROM ap_attendance_post_students
+          WHERE attendance_post_id IN (${postIds.map(() => "?").join(",")})
+          `,
+          postIds,
+        )
+      : [];
+
+  const markMap = new Map<string, { status: AttendanceMark; remarks: string | null }>();
+  for (const m of marks) {
+    markMap.set(`${m.attendance_post_id}_${m.student_db_id}`, {
+      status: m.status,
+      remarks: m.remarks,
+    });
+  }
+
+  const studentsList = students.map((student) => {
+    let studentPresent = 0;
+    let studentAbsent = 0;
+    let studentOd = 0;
+    let studentLeave = 0;
+    let studentConducted = 0;
+
+    const studentSlots: Record<
+      number,
+      {
+        sessionId: number;
+        status: AttendanceMark | "pending" | "unposted";
+        remarks: string | null;
+      }
+    > = {};
+
+    for (const slot of slots) {
+      if (!slot.posted || !slot.postId) {
+        studentSlots[slot.sessionId] = {
+          sessionId: slot.sessionId,
+          status: "pending",
+          remarks: null,
+        };
+      } else {
+        studentConducted++;
+        const mark = markMap.get(`${slot.postId}_${student.id}`);
+        const markStatus = mark ? mark.status : "absent";
+        if (markStatus === "present") {
+          studentPresent++;
+        } else if (markStatus === "od") {
+          studentOd++;
+          studentPresent++;
+        } else if (markStatus === "leave") {
+          studentLeave++;
+        } else {
+          studentAbsent++;
+        }
+
+        studentSlots[slot.sessionId] = {
+          sessionId: slot.sessionId,
+          status: markStatus,
+          remarks: mark?.remarks ?? null,
+        };
+      }
+    }
+
+    const percentage =
+      studentConducted > 0
+        ? Math.round((studentPresent / studentConducted) * 1000) / 10
+        : null;
+
+    return {
+      id: String(student.id),
+      studentDbId: Number(student.id),
+      name: student.student_name || "Unknown",
+      pinNo: student.pin_no || null,
+      admissionNo: student.admission_number,
+      course: student.course || null,
+      branch: student.branch || null,
+      year: filters.year ?? (student.current_year ? Number(student.current_year) : null),
+      semester: filters.semester ?? (student.current_semester ? Number(student.current_semester) : null),
+      hasPhoto: Boolean(student.has_photo),
+      slots: studentSlots,
+      totalPresent: studentPresent,
+      totalAbsent: studentAbsent,
+      totalOd: studentOd,
+      totalLeave: studentLeave,
+      totalConducted: studentConducted,
+      totalSlots: slots.length,
+      percentage,
+    };
+  });
+
+  const totalStudents = studentsList.length;
+  const postedSlotsCount = slots.filter((s) => s.posted).length;
+  const totalConductedSlotsSum = studentsList.reduce((s, st) => s + st.totalConducted, 0);
+  const totalPresentSum = studentsList.reduce((s, st) => s + st.totalPresent, 0);
+  const totalAbsentSum = studentsList.reduce((s, st) => s + st.totalAbsent, 0);
+
+  const avgAttendancePct =
+    totalConductedSlotsSum > 0
+      ? Math.round((totalPresentSum / totalConductedSlotsSum) * 1000) / 10
+      : 0;
+
+  return {
+    date,
+    section: activeSection,
+    availableSections,
+    slots,
+    students: studentsList,
+    summary: {
+      totalStudents,
+      totalSlots: slots.length,
+      postedSlots: postedSlotsCount,
+      pendingSlots: slots.length - postedSlotsCount,
+      totalPresentMarks: totalPresentSum,
+      totalAbsentMarks: totalAbsentSum,
+      avgAttendancePct,
+    },
+  };
+}
+
+export type WeeklyAttendanceAnalyticsResult = {
+  startDate: string;
+  endDate: string;
+  weekLabel: string;
+  section: string | null;
+  availableSections: string[];
+  days: Array<{
+    date: string;
+    dayOfWeek: string;
+    dayLabel: string;
+    totalSlots: number;
+    postedSlots: number;
+    slots: Array<{
+      sessionId: number;
+      slotLabel: string;
+      startTime: string;
+      endTime: string;
+      time: string;
+      subjectId: number | null;
+      subjectCode: string | null;
+      subjectName: string | null;
+      facultyName: string | null;
+      roomLabel: string | null;
+      status: string;
+      posted: boolean;
+      postId: number | null;
+      presentCount: number;
+      absentCount: number;
+      odCount: number;
+      leaveCount: number;
+    }>;
+  }>;
+  students: Array<{
+    id: string;
+    studentDbId: number;
+    name: string;
+    pinNo: string | null;
+    admissionNo: string;
+    course: string | null;
+    branch: string | null;
+    year: number | null;
+    semester: number | null;
+    hasPhoto: boolean;
+    days: Record<
+      string,
+      {
+        date: string;
+        dayOfWeek: string;
+        totalSlots: number;
+        presentCount: number;
+        absentCount: number;
+        odCount: number;
+        leaveCount: number;
+        percentage: number | null;
+        slots: Record<
+          number,
+          {
+            sessionId: number;
+            slotLabel: string;
+            subjectCode: string | null;
+            status: AttendanceMark | "pending" | "unposted";
+            remarks: string | null;
+          }
+        >;
+      }
+    >;
+    totalPresent: number;
+    totalAbsent: number;
+    totalOd: number;
+    totalLeave: number;
+    totalConducted: number;
+    totalSlots: number;
+    percentage: number | null;
+  }>;
+  summary: {
+    totalStudents: number;
+    totalSlotsInWeek: number;
+    postedSlotsInWeek: number;
+    totalPresentMarks: number;
+    totalAbsentMarks: number;
+    avgAttendancePct: number;
+  };
+};
+
+export async function getWeeklyAttendanceAnalytics(filters: {
+  date?: string;
+  startDate?: string;
+  collegeId?: number;
+  collegeIds?: number[];
+  courseId?: number;
+  branchId?: number;
+  branchIds?: number[];
+  batch?: string;
+  year?: number;
+  semester?: number;
+  section?: string;
+  academicYear?: string;
+}): Promise<WeeklyAttendanceAnalyticsResult> {
+  const refDate =
+    filters.startDate && /^\d{4}-\d{2}-\d{2}$/.test(filters.startDate)
+      ? filters.startDate
+      : filters.date && /^\d{4}-\d{2}-\d{2}$/.test(filters.date)
+        ? filters.date
+        : todayIso();
+
+  const d = new Date(refDate + "T00:00:00");
+  const day = d.getDay();
+  const diffToMonday = d.getDate() - day + (day === 0 ? -6 : 1);
+  const monday = new Date(d);
+  monday.setDate(diffToMonday);
+
+  const weekDates: string[] = [];
+  for (let i = 0; i < 6; i++) {
+    const cur = new Date(monday);
+    cur.setDate(monday.getDate() + i);
+    const y = cur.getFullYear();
+    const m = String(cur.getMonth() + 1).padStart(2, "0");
+    const dayNum = String(cur.getDate()).padStart(2, "0");
+    weekDates.push(`${y}-${m}-${dayNum}`);
+  }
+
+  const startDate = weekDates[0];
+  const endDate = weekDates[weekDates.length - 1];
+
+  const monthShorts = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const startD = new Date(startDate + "T00:00:00");
+  const endD = new Date(endDate + "T00:00:00");
+  const weekLabel = `${monthShorts[startD.getMonth()]} ${String(startD.getDate()).padStart(2, "0")} – ${monthShorts[endD.getMonth()]} ${String(endD.getDate()).padStart(2, "0")}, ${endD.getFullYear()}`;
+
+  // Pre-generate sessions for the week's dates from the published timetable plan
+  for (const date of weekDates) {
+    await ensureSessionsForDate(date, {
+      collegeId: filters.collegeId,
+      courseId: filters.courseId,
+      branchId: filters.branchId,
+      batch: filters.batch,
+      year: filters.year,
+      semester: filters.semester,
+      section: filters.section,
+      academicYear: filters.academicYear,
+    }).catch(() => null);
+  }
+
+  const where = [
+    "cs.session_date >= ?",
+    "cs.session_date <= ?",
+    "cs.status <> 'cancelled'",
+    "(p.status = 'published' OR ap.id IS NOT NULL)",
+  ];
+  const params: unknown[] = [startDate, endDate];
+
+  if (filters.collegeId) {
+    where.push("cs.college_id = ?");
+    params.push(filters.collegeId);
+  } else if (filters.collegeIds?.length) {
+    where.push(`cs.college_id IN (${filters.collegeIds.map(() => "?").join(",")})`);
+    params.push(...filters.collegeIds);
+  }
+  if (filters.courseId) {
+    where.push("p.course_id = ?");
+    params.push(filters.courseId);
+  }
+  if (filters.branchId) {
+    where.push("cs.branch_id = ?");
+    params.push(filters.branchId);
+  } else if (filters.branchIds?.length) {
+    where.push(`cs.branch_id IN (${filters.branchIds.map(() => "?").join(",")})`);
+    params.push(...filters.branchIds);
+  }
+  if (filters.batch) {
+    where.push("p.batch = ?");
+    params.push(filters.batch);
+  }
+  if (filters.year != null) {
+    where.push("p.year_of_study = ?");
+    params.push(filters.year);
+  }
+  if (filters.semester != null) {
+    where.push("p.semester_number = ?");
+    params.push(filters.semester);
+  }
+  if (filters.academicYear) {
+    where.push("p.academic_year_label = ?");
+    params.push(filters.academicYear);
+  }
+
+  const allWeekSessions = await queryAcademic<SessionListRow[]>(
+    `
+    SELECT
+      cs.id,
+      cs.plan_id,
+      cs.session_date,
+      cs.day_of_week,
+      cs.start_time,
+      cs.end_time,
+      cs.section_name,
+      cs.college_id,
+      p.course_id,
+      cs.branch_id,
+      p.batch,
+      p.year_of_study,
+      p.semester_number,
+      cs.subject_id,
+      cs.subject_code,
+      cs.subject_name,
+      cs.subject_type_snapshot,
+      cs.faculty_staff_link_id,
+      sl.display_name AS faculty_name,
+      cs.room_label,
+      COALESCE(ts.label, CONCAT('P', cs.period_slot_id)) AS slot_label,
+      cs.status,
+      ap.id AS post_id,
+      ap.present_count,
+      ap.absent_count,
+      ap.od_count,
+      ap.leave_count
+    FROM ap_class_sessions cs
+    INNER JOIN ap_timetable_plans p ON p.id = cs.plan_id
+    LEFT JOIN ap_staff_link sl ON sl.id = cs.faculty_staff_link_id
+    LEFT JOIN ap_timing_template_slots ts
+      ON ts.id = COALESCE(cs.timing_slot_id, cs.period_slot_id)
+    LEFT JOIN ap_attendance_posts ap ON ap.class_session_id = cs.id
+    WHERE ${where.join(" AND ")}
+    ORDER BY cs.session_date, cs.start_time, cs.id
+    `,
+    params,
+  );
+
+  const availableSections = Array.from(
+    new Set(allWeekSessions.map((r) => r.section_name).filter(Boolean)),
+  ) as string[];
+
+  const activeSection =
+    filters.section && filters.section !== "all"
+      ? filters.section
+      : availableSections.length > 0
+        ? availableSections[0]
+        : null;
+
+  const sectionSessions = activeSection
+    ? allWeekSessions.filter(
+        (r) =>
+          (r.section_name || "").trim().toLowerCase() ===
+          activeSection.trim().toLowerCase(),
+      )
+    : allWeekSessions;
+
+  // Load roster students (with cohort semester preservation)
+  const students = await loadScopeStudents({
+    collegeId: filters.collegeId,
+    collegeIds: filters.collegeIds,
+    courseId: filters.courseId,
+    branchId: filters.branchId,
+    branchIds: filters.branchIds,
+    batch: filters.batch,
+    year: filters.year,
+    semester: filters.semester,
+    section: activeSection || undefined,
+  });
+
+  // Group sessions by date
+  const sessionsByDate = new Map<string, SessionListRow[]>();
+  for (const date of weekDates) sessionsByDate.set(date, []);
+  for (const s of sectionSessions) {
+    const dStr = asDate(s.session_date);
+    if (dStr && sessionsByDate.has(dStr)) {
+      sessionsByDate.get(dStr)!.push(s);
+    }
+  }
+
+  const dayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const days = weekDates.map((date, idx) => {
+    const daySessions = sessionsByDate.get(date) || [];
+    const dayOfWeek = dayNames[idx];
+    const postedSlots = daySessions.filter((s) => s.post_id != null).length;
+
+    return {
+      date,
+      dayOfWeek,
+      dayLabel: `${dayOfWeek} (${date.slice(5)})`,
+      totalSlots: daySessions.length,
+      postedSlots,
+      slots: daySessions.map((row) => ({
+        sessionId: Number(row.id),
+        slotLabel: row.slot_label || `P${row.period_slot_id || ""}`.trim(),
+        startTime: row.start_time ? String(row.start_time).slice(0, 5) : "",
+        endTime: row.end_time ? String(row.end_time).slice(0, 5) : "",
+        time: [
+          row.start_time ? String(row.start_time).slice(0, 5) : "",
+          row.end_time ? String(row.end_time).slice(0, 5) : "",
+        ]
+          .filter(Boolean)
+          .join(" – "),
+        subjectId: row.subject_id ? Number(row.subject_id) : null,
+        subjectCode: row.subject_code || null,
+        subjectName: row.subject_name || null,
+        facultyName: row.faculty_name || null,
+        roomLabel: row.room_label || null,
+        status: row.status,
+        posted: Boolean(row.post_id),
+        postId: row.post_id ? Number(row.post_id) : null,
+        presentCount: Number(row.present_count ?? 0),
+        absentCount: Number(row.absent_count ?? 0),
+        odCount: Number(row.od_count ?? 0),
+        leaveCount: Number(row.leave_count ?? 0),
+      })),
+    };
+  });
+
+  const postIds = sectionSessions
+    .map((s) => s.post_id)
+    .filter(Boolean) as number[];
+
+  type MarkRow = RowDataPacket & {
+    attendance_post_id: number;
+    student_db_id: number;
+    status: AttendanceMark;
+    remarks: string | null;
+  };
+
+  const marks =
+    postIds.length > 0
+      ? await queryAcademic<MarkRow[]>(
+          `
+          SELECT attendance_post_id, student_db_id, status, remarks
+          FROM ap_attendance_post_students
+          WHERE attendance_post_id IN (${postIds.map(() => "?").join(",")})
+          `,
+          postIds,
+        )
+      : [];
+
+  const markMap = new Map<string, { status: AttendanceMark; remarks: string | null }>();
+  for (const m of marks) {
+    markMap.set(`${m.attendance_post_id}_${m.student_db_id}`, {
+      status: m.status,
+      remarks: m.remarks,
+    });
+  }
+
+  const studentsList = students.map((student) => {
+    let studentWeekPresent = 0;
+    let studentWeekAbsent = 0;
+    let studentWeekOd = 0;
+    let studentWeekLeave = 0;
+    let studentWeekConducted = 0;
+    let studentWeekTotalSlots = 0;
+
+    const studentDays: WeeklyAttendanceAnalyticsResult["students"][0]["days"] = {};
+
+    for (const d of days) {
+      let dayPresent = 0;
+      let dayAbsent = 0;
+      let dayOd = 0;
+      let dayLeave = 0;
+      let dayConducted = 0;
+
+      const daySlotsRecord: Record<
+        number,
+        {
+          sessionId: number;
+          slotLabel: string;
+          subjectCode: string | null;
+          status: AttendanceMark | "pending" | "unposted";
+          remarks: string | null;
+        }
+      > = {};
+
+      for (const slot of d.slots) {
+        studentWeekTotalSlots++;
+        if (!slot.posted || !slot.postId) {
+          daySlotsRecord[slot.sessionId] = {
+            sessionId: slot.sessionId,
+            slotLabel: slot.slotLabel,
+            subjectCode: slot.subjectCode,
+            status: "pending",
+            remarks: null,
+          };
+        } else {
+          dayConducted++;
+          studentWeekConducted++;
+          const mark = markMap.get(`${slot.postId}_${student.id}`);
+          const markStatus = mark ? mark.status : "absent";
+          if (markStatus === "present") {
+            dayPresent++;
+            studentWeekPresent++;
+          } else if (markStatus === "od") {
+            dayOd++;
+            dayPresent++;
+            studentWeekOd++;
+            studentWeekPresent++;
+          } else if (markStatus === "leave") {
+            dayLeave++;
+            studentWeekLeave++;
+          } else {
+            dayAbsent++;
+            studentWeekAbsent++;
+          }
+
+          daySlotsRecord[slot.sessionId] = {
+            sessionId: slot.sessionId,
+            slotLabel: slot.slotLabel,
+            subjectCode: slot.subjectCode,
+            status: markStatus,
+            remarks: mark?.remarks ?? null,
+          };
+        }
+      }
+
+      studentDays[d.date] = {
+        date: d.date,
+        dayOfWeek: d.dayOfWeek,
+        totalSlots: d.slots.length,
+        presentCount: dayPresent,
+        absentCount: dayAbsent,
+        odCount: dayOd,
+        leaveCount: dayLeave,
+        percentage: dayConducted > 0 ? Math.round((dayPresent / dayConducted) * 1000) / 10 : null,
+        slots: daySlotsRecord,
+      };
+    }
+
+    const percentage =
+      studentWeekConducted > 0
+        ? Math.round((studentWeekPresent / studentWeekConducted) * 1000) / 10
+        : null;
+
+    return {
+      id: String(student.id),
+      studentDbId: Number(student.id),
+      name: student.student_name || "Unknown",
+      pinNo: student.pin_no || null,
+      admissionNo: student.admission_number,
+      course: student.course || null,
+      branch: student.branch || null,
+      year: filters.year ?? (student.current_year ? Number(student.current_year) : null),
+      semester: filters.semester ?? (student.current_semester ? Number(student.current_semester) : null),
+      hasPhoto: Boolean(student.has_photo),
+      days: studentDays,
+      totalPresent: studentWeekPresent,
+      totalAbsent: studentWeekAbsent,
+      totalOd: studentWeekOd,
+      totalLeave: studentWeekLeave,
+      totalConducted: studentWeekConducted,
+      totalSlots: studentWeekTotalSlots,
+      percentage,
+    };
+  });
+
+  const totalSlotsInWeek = days.reduce((acc, d) => acc + d.totalSlots, 0);
+  const postedSlotsInWeek = days.reduce((acc, d) => acc + d.postedSlots, 0);
+  const totalPresentMarks = studentsList.reduce((acc, s) => acc + s.totalPresent, 0);
+  const totalAbsentMarks = studentsList.reduce((acc, s) => acc + s.totalAbsent, 0);
+  const totalConductedMarks = totalPresentMarks + totalAbsentMarks;
+  const avgAttendancePct =
+    totalConductedMarks > 0 ? Math.round((totalPresentMarks / totalConductedMarks) * 1000) / 10 : 0;
+
+  return {
+    startDate,
+    endDate,
+    weekLabel,
+    section: activeSection,
+    availableSections,
+    days,
+    students: studentsList,
+    summary: {
+      totalStudents: studentsList.length,
+      totalSlotsInWeek,
+      postedSlotsInWeek,
+      totalPresentMarks,
+      totalAbsentMarks,
+      avgAttendancePct,
+    },
+  };
+}
+
+export type MonthlyAttendanceAnalyticsResult = {
+  month: number;
+  year: number;
+  monthName: string;
+  students: Array<{
+    id: string;
+    studentDbId: number;
+    name: string;
+    pinNo: string | null;
+    admissionNo: string;
+    course: string | null;
+    branch: string | null;
+    year: number | null;
+    semester: number | null;
+    hasPhoto: boolean;
+    totalSlots: number;
+    presentCount: number;
+    absentCount: number;
+    odCount: number;
+    leaveCount: number;
+    percentage: number;
+    status: "good" | "warning" | "critical";
+  }>;
+  daySummaries: Array<{
+    date: string;
+    dayOfWeek: string;
+    totalSessions: number;
+    postedSessions: number;
+    presentCount: number;
+    absentCount: number;
+    avgPct: number;
+  }>;
+  summary: {
+    totalStudents: number;
+    totalSessionsConducted: number;
+    avgAttendancePct: number;
+    safeCount: number;
+    warningCount: number;
+    criticalCount: number;
+  };
+};
+
+export async function getMonthlyAttendanceAnalytics(filters: {
+  month?: number;
+  year?: number;
+  collegeId?: number;
+  collegeIds?: number[];
+  courseId?: number;
+  branchId?: number;
+  branchIds?: number[];
+  batch?: string;
+  yearOfStudy?: number;
+  semester?: number;
+  section?: string;
+  academicYear?: string;
+}): Promise<MonthlyAttendanceAnalyticsResult> {
+  const now = new Date();
+  const year = filters.year && Number.isFinite(filters.year) ? filters.year : now.getFullYear();
+  const month =
+    filters.month && Number.isFinite(filters.month) && filters.month >= 1 && filters.month <= 12
+      ? filters.month
+      : now.getMonth() + 1;
+
+  const startDate = `${year}-${String(month).padStart(2, "0")}-01`;
+  const lastDay = new Date(year, month, 0).getDate();
+  const endDate = `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+
+  const monthNames = [
+    "January", "February", "March", "April", "May", "June",
+    "July", "August", "September", "October", "November", "December",
+  ];
+  const monthName = `${monthNames[month - 1]} ${year}`;
+
+  const students = await loadScopeStudents({
+    collegeId: filters.collegeId,
+    collegeIds: filters.collegeIds,
+    courseId: filters.courseId,
+    branchId: filters.branchId,
+    branchIds: filters.branchIds,
+    batch: filters.batch,
+    year: filters.yearOfStudy,
+    semester: filters.semester,
+    section: filters.section,
+  });
+
+  const where = [
+    "cs.session_date >= ?",
+    "cs.session_date <= ?",
+    "cs.status <> 'cancelled'",
+  ];
+  const params: unknown[] = [startDate, endDate];
+
+  if (filters.collegeId) {
+    where.push("cs.college_id = ?");
+    params.push(filters.collegeId);
+  } else if (filters.collegeIds?.length) {
+    where.push(`cs.college_id IN (${filters.collegeIds.map(() => "?").join(",")})`);
+    params.push(...filters.collegeIds);
+  }
+  if (filters.courseId) {
+    where.push("p.course_id = ?");
+    params.push(filters.courseId);
+  }
+  if (filters.branchId) {
+    where.push("cs.branch_id = ?");
+    params.push(filters.branchId);
+  } else if (filters.branchIds?.length) {
+    where.push(`cs.branch_id IN (${filters.branchIds.map(() => "?").join(",")})`);
+    params.push(...filters.branchIds);
+  }
+  if (filters.batch) {
+    where.push("p.batch = ?");
+    params.push(filters.batch);
+  }
+  if (filters.yearOfStudy != null) {
+    where.push("p.year_of_study = ?");
+    params.push(filters.yearOfStudy);
+  }
+  if (filters.semester != null) {
+    where.push("p.semester_number = ?");
+    params.push(filters.semester);
+  }
+  if (filters.section) {
+    where.push("cs.section_name = ?");
+    params.push(filters.section);
+  }
+  if (filters.academicYear) {
+    where.push("p.academic_year_label = ?");
+    params.push(filters.academicYear);
+  }
+
+  type StudentAggRow = RowDataPacket & {
+    student_db_id: number;
+    total_conducted: number;
+    present_count: number;
+    absent_count: number;
+    od_count: number;
+    leave_count: number;
+  };
+
+  type DaySummaryRow = RowDataPacket & {
+    session_date: string;
+    day_of_week: string;
+    total_sessions: number;
+    posted_sessions: number;
+    present_count: number;
+    absent_count: number;
+  };
+
+  const [studentRows, dayRows] = await Promise.all([
+    queryAcademic<StudentAggRow[]>(
+      `
+      SELECT
+        aps.student_db_id,
+        COUNT(DISTINCT cs.id) AS total_conducted,
+        SUM(CASE WHEN aps.status IN ('present', 'od') THEN 1 ELSE 0 END) AS present_count,
+        SUM(CASE WHEN aps.status = 'absent' THEN 1 ELSE 0 END) AS absent_count,
+        SUM(CASE WHEN aps.status = 'od' THEN 1 ELSE 0 END) AS od_count,
+        SUM(CASE WHEN aps.status = 'leave' THEN 1 ELSE 0 END) AS leave_count
+      FROM ap_attendance_post_students aps
+      INNER JOIN ap_attendance_posts ap ON ap.id = aps.attendance_post_id
+      INNER JOIN ap_class_sessions cs ON cs.id = ap.class_session_id
+      INNER JOIN ap_timetable_plans p ON p.id = cs.plan_id
+      WHERE ${where.join(" AND ")}
+      GROUP BY aps.student_db_id
+      `,
+      params,
+    ),
+    queryAcademic<DaySummaryRow[]>(
+      `
+      SELECT
+        DATE_FORMAT(cs.session_date, '%Y-%m-%d') AS session_date,
+        cs.day_of_week,
+        COUNT(DISTINCT cs.id) AS total_sessions,
+        SUM(CASE WHEN ap.id IS NOT NULL THEN 1 ELSE 0 END) AS posted_sessions,
+        SUM(COALESCE(ap.present_count, 0)) AS present_count,
+        SUM(COALESCE(ap.absent_count, 0)) AS absent_count
+      FROM ap_class_sessions cs
+      INNER JOIN ap_timetable_plans p ON p.id = cs.plan_id
+      LEFT JOIN ap_attendance_posts ap ON ap.class_session_id = cs.id
+      WHERE ${where.join(" AND ")}
+      GROUP BY cs.session_date, cs.day_of_week
+      ORDER BY cs.session_date
+      `,
+      params,
+    ),
+  ]);
+
+  const aggMap = new Map<number, StudentAggRow>();
+  for (const row of studentRows) {
+    aggMap.set(Number(row.student_db_id), row);
+  }
+
+  let safeCount = 0;
+  let warningCount = 0;
+  let criticalCount = 0;
+
+  const studentsList = students.map((s) => {
+    const agg = aggMap.get(Number(s.id));
+    const totalSlots = Number(agg?.total_conducted ?? 0);
+    const presentCount = Number(agg?.present_count ?? 0);
+    const absentCount = Number(agg?.absent_count ?? 0);
+    const odCount = Number(agg?.od_count ?? 0);
+    const leaveCount = Number(agg?.leave_count ?? 0);
+
+    const percentage =
+      totalSlots > 0 ? Math.round((presentCount / totalSlots) * 1000) / 10 : 0;
+
+    let status: "good" | "warning" | "critical" = "good";
+    if (percentage >= 75) {
+      status = "good";
+      safeCount++;
+    } else if (percentage >= 65) {
+      status = "warning";
+      warningCount++;
+    } else {
+      status = "critical";
+      criticalCount++;
+    }
+
+    return {
+      id: String(s.id),
+      studentDbId: Number(s.id),
+      name: s.student_name || "Unknown",
+      pinNo: s.pin_no || null,
+      admissionNo: s.admission_number,
+      course: s.course || null,
+      branch: s.branch || null,
+      year: filters.yearOfStudy ?? (s.current_year ? Number(s.current_year) : null),
+      semester: filters.semester ?? (s.current_semester ? Number(s.current_semester) : null),
+      hasPhoto: Boolean(s.has_photo),
+      totalSlots,
+      presentCount,
+      absentCount,
+      odCount,
+      leaveCount,
+      percentage,
+      status,
+    };
+  });
+
+  const totalConductedSessions = dayRows.reduce(
+    (acc, d) => acc + Number(d.posted_sessions || 0),
+    0,
+  );
+  const totalPresentMarks = dayRows.reduce((acc, d) => acc + Number(d.present_count || 0), 0);
+  const totalAbsentMarks = dayRows.reduce((acc, d) => acc + Number(d.absent_count || 0), 0);
+  const totalMarks = totalPresentMarks + totalAbsentMarks;
+  const avgAttendancePct =
+    totalMarks > 0 ? Math.round((totalPresentMarks / totalMarks) * 1000) / 10 : 0;
+
+  return {
+    month,
+    year,
+    monthName,
+    students: studentsList,
+    daySummaries: dayRows.map((d) => {
+      const tot = Number(d.present_count || 0) + Number(d.absent_count || 0);
+      return {
+        date: d.session_date,
+        dayOfWeek: d.day_of_week,
+        totalSessions: Number(d.total_sessions || 0),
+        postedSessions: Number(d.posted_sessions || 0),
+        presentCount: Number(d.present_count || 0),
+        absentCount: Number(d.absent_count || 0),
+        avgPct: tot > 0 ? Math.round((Number(d.present_count) / tot) * 1000) / 10 : 0,
+      };
+    }),
+    summary: {
+      totalStudents: studentsList.length,
+      totalSessionsConducted: totalConductedSessions,
+      avgAttendancePct,
+      safeCount,
+      warningCount,
+      criticalCount,
+    },
+  };
+}
+
+export type SemesterAttendanceAnalyticsResult = {
+  semester: number | null;
+  academicYear: string | null;
+  students: Array<{
+    id: string;
+    studentDbId: number;
+    name: string;
+    pinNo: string | null;
+    admissionNo: string;
+    course: string | null;
+    branch: string | null;
+    year: number | null;
+    semester: number | null;
+    hasPhoto: boolean;
+    totalClasses: number;
+    presentCount: number;
+    absentCount: number;
+    odCount: number;
+    leaveCount: number;
+    percentage: number;
+    eligibility: "Eligible" | "Condonation Required" | "Detained";
+    subjectBreakdown: Array<{
+      subjectCode: string;
+      subjectName: string;
+      total: number;
+      present: number;
+      percentage: number;
+    }>;
+  }>;
+  summary: {
+    totalStudents: number;
+    eligibleCount: number;
+    condonationCount: number;
+    detainedCount: number;
+    avgAttendancePct: number;
+    totalClassesConducted: number;
+  };
+  bands: Array<{ label: string; count: number; percentage: number }>;
+};
+
+export async function getSemesterAttendanceAnalytics(filters: {
+  semester?: number;
+  academicYear?: string;
+  collegeId?: number;
+  collegeIds?: number[];
+  courseId?: number;
+  branchId?: number;
+  branchIds?: number[];
+  batch?: string;
+  yearOfStudy?: number;
+  section?: string;
+}): Promise<SemesterAttendanceAnalyticsResult> {
+  const students = await loadScopeStudents({
+    collegeId: filters.collegeId,
+    collegeIds: filters.collegeIds,
+    courseId: filters.courseId,
+    branchId: filters.branchId,
+    branchIds: filters.branchIds,
+    batch: filters.batch,
+    year: filters.yearOfStudy,
+    semester: filters.semester,
+    section: filters.section,
+  });
+
+  const where = ["cs.status <> 'cancelled'"];
+  const params: unknown[] = [];
+
+  if (filters.semester != null) {
+    where.push("p.semester_number = ?");
+    params.push(filters.semester);
+  }
+  if (filters.academicYear) {
+    where.push("p.academic_year_label = ?");
+    params.push(filters.academicYear);
+  }
+  if (filters.collegeId) {
+    where.push("cs.college_id = ?");
+    params.push(filters.collegeId);
+  } else if (filters.collegeIds?.length) {
+    where.push(`cs.college_id IN (${filters.collegeIds.map(() => "?").join(",")})`);
+    params.push(...filters.collegeIds);
+  }
+  if (filters.courseId) {
+    where.push("p.course_id = ?");
+    params.push(filters.courseId);
+  }
+  if (filters.branchId) {
+    where.push("cs.branch_id = ?");
+    params.push(filters.branchId);
+  } else if (filters.branchIds?.length) {
+    where.push(`cs.branch_id IN (${filters.branchIds.map(() => "?").join(",")})`);
+    params.push(...filters.branchIds);
+  }
+  if (filters.batch) {
+    where.push("p.batch = ?");
+    params.push(filters.batch);
+  }
+  if (filters.yearOfStudy != null) {
+    where.push("p.year_of_study = ?");
+    params.push(filters.yearOfStudy);
+  }
+  if (filters.section) {
+    where.push("cs.section_name = ?");
+    params.push(filters.section);
+  }
+
+  type OverallRow = RowDataPacket & {
+    student_db_id: number;
+    total_conducted: number;
+    present_count: number;
+    absent_count: number;
+    od_count: number;
+    leave_count: number;
+  };
+
+  type SubjectRow = RowDataPacket & {
+    student_db_id: number;
+    subject_code: string | null;
+    subject_name: string | null;
+    total_sessions: number;
+    present_count: number;
+  };
+
+  const [studentRows, subjectRows] = await Promise.all([
+    queryAcademic<OverallRow[]>(
+      `
+      SELECT
+        aps.student_db_id,
+        COUNT(DISTINCT cs.id) AS total_conducted,
+        SUM(CASE WHEN aps.status IN ('present', 'od') THEN 1 ELSE 0 END) AS present_count,
+        SUM(CASE WHEN aps.status = 'absent' THEN 1 ELSE 0 END) AS absent_count,
+        SUM(CASE WHEN aps.status = 'od' THEN 1 ELSE 0 END) AS od_count,
+        SUM(CASE WHEN aps.status = 'leave' THEN 1 ELSE 0 END) AS leave_count
+      FROM ap_attendance_post_students aps
+      INNER JOIN ap_attendance_posts ap ON ap.id = aps.attendance_post_id
+      INNER JOIN ap_class_sessions cs ON cs.id = ap.class_session_id
+      INNER JOIN ap_timetable_plans p ON p.id = cs.plan_id
+      WHERE ${where.join(" AND ")}
+      GROUP BY aps.student_db_id
+      `,
+      params,
+    ),
+    queryAcademic<SubjectRow[]>(
+      `
+      SELECT
+        aps.student_db_id,
+        COALESCE(NULLIF(TRIM(cs.subject_code), ''), 'GEN') AS subject_code,
+        COALESCE(NULLIF(TRIM(cs.subject_name), ''), 'General') AS subject_name,
+        COUNT(DISTINCT cs.id) AS total_sessions,
+        SUM(CASE WHEN aps.status IN ('present', 'od') THEN 1 ELSE 0 END) AS present_count
+      FROM ap_attendance_post_students aps
+      INNER JOIN ap_attendance_posts ap ON ap.id = aps.attendance_post_id
+      INNER JOIN ap_class_sessions cs ON cs.id = ap.class_session_id
+      INNER JOIN ap_timetable_plans p ON p.id = cs.plan_id
+      WHERE ${where.join(" AND ")}
+      GROUP BY aps.student_db_id, cs.subject_code, cs.subject_name
+      ORDER BY cs.subject_name
+      `,
+      params,
+    ),
+  ]);
+
+  const aggMap = new Map<number, OverallRow>();
+  for (const r of studentRows) aggMap.set(Number(r.student_db_id), r);
+
+  const subjectsByStudent = new Map<number, SubjectRow[]>();
+  for (const s of subjectRows) {
+    const list = subjectsByStudent.get(Number(s.student_db_id)) || [];
+    list.push(s);
+    subjectsByStudent.set(Number(s.student_db_id), list);
+  }
+
+  let eligibleCount = 0;
+  let condonationCount = 0;
+  let detainedCount = 0;
+  let totalConductedClassesMax = 0;
+
+  let band90 = 0;
+  let band75 = 0;
+  let band65 = 0;
+  let bandBelow65 = 0;
+
+  const studentsList = students.map((s) => {
+    const agg = aggMap.get(Number(s.id));
+    const totalClasses = Number(agg?.total_conducted ?? 0);
+    const presentCount = Number(agg?.present_count ?? 0);
+    const absentCount = Number(agg?.absent_count ?? 0);
+    const odCount = Number(agg?.od_count ?? 0);
+    const leaveCount = Number(agg?.leave_count ?? 0);
+
+    if (totalClasses > totalConductedClassesMax) {
+      totalConductedClassesMax = totalClasses;
+    }
+
+    const percentage =
+      totalClasses > 0 ? Math.round((presentCount / totalClasses) * 1000) / 10 : 0;
+
+    let eligibility: "Eligible" | "Condonation Required" | "Detained" = "Eligible";
+    if (percentage >= 75) {
+      eligibility = "Eligible";
+      eligibleCount++;
+    } else if (percentage >= 65) {
+      eligibility = "Condonation Required";
+      condonationCount++;
+    } else {
+      eligibility = "Detained";
+      detainedCount++;
+    }
+
+    if (percentage >= 90) band90++;
+    else if (percentage >= 75) band75++;
+    else if (percentage >= 65) band65++;
+    else bandBelow65++;
+
+    const studentSubs = subjectsByStudent.get(Number(s.id)) || [];
+    const subjectBreakdown = studentSubs.map((sub) => {
+      const tot = Number(sub.total_sessions || 0);
+      const pr = Number(sub.present_count || 0);
+      return {
+        subjectCode: sub.subject_code || "GEN",
+        subjectName: sub.subject_name || "General",
+        total: tot,
+        present: pr,
+        percentage: tot > 0 ? Math.round((pr / tot) * 1000) / 10 : 0,
+      };
+    });
+
+    return {
+      id: String(s.id),
+      studentDbId: Number(s.id),
+      name: s.student_name || "Unknown",
+      pinNo: s.pin_no || null,
+      admissionNo: s.admission_number,
+      course: s.course || null,
+      branch: s.branch || null,
+      year: filters.yearOfStudy ?? (s.current_year ? Number(s.current_year) : null),
+      semester: filters.semester ?? (s.current_semester ? Number(s.current_semester) : null),
+      hasPhoto: Boolean(s.has_photo),
+      totalClasses,
+      presentCount,
+      absentCount,
+      odCount,
+      leaveCount,
+      percentage,
+      eligibility,
+      subjectBreakdown,
+    };
+  });
+
+  const totalPr = studentsList.reduce((acc, s) => acc + s.presentCount, 0);
+  const totalCl = studentsList.reduce((acc, s) => acc + s.totalClasses, 0);
+  const avgAttendancePct =
+    totalCl > 0 ? Math.round((totalPr / totalCl) * 1000) / 10 : 0;
+
+  const totalStudents = studentsList.length;
+  const bands = [
+    {
+      label: "90%+",
+      count: band90,
+      percentage: totalStudents > 0 ? Math.round((band90 / totalStudents) * 100) : 0,
+    },
+    {
+      label: "75–89%",
+      count: band75,
+      percentage: totalStudents > 0 ? Math.round((band75 / totalStudents) * 100) : 0,
+    },
+    {
+      label: "65–74%",
+      count: band65,
+      percentage: totalStudents > 0 ? Math.round((band65 / totalStudents) * 100) : 0,
+    },
+    {
+      label: "Below 65%",
+      count: bandBelow65,
+      percentage: totalStudents > 0 ? Math.round((bandBelow65 / totalStudents) * 100) : 0,
+    },
+  ];
+
+  return {
+    semester: filters.semester ?? null,
+    academicYear: filters.academicYear ?? null,
+    students: studentsList,
+    summary: {
+      totalStudents,
+      eligibleCount,
+      condonationCount,
+      detainedCount,
+      avgAttendancePct,
+      totalClassesConducted: totalConductedClassesMax,
+    },
+    bands,
+  };
+}
+
 /** Kept so command center can reuse session stats without Student DB period_slots. */
 export async function getTodaySessionCounts(filters: {
   collegeId?: number;
@@ -925,3 +2415,4 @@ export async function getTodaySessionCounts(filters: {
 }
 
 export { todayIso };
+

@@ -281,10 +281,6 @@ export async function generateClassSessions(input: {
     );
   }
 
-  const today = formatDate(new Date());
-  if (requestedStart && requestedStart > today) {
-    return { created: 0, skippedHolidayDates: 0, skippedExisting: 0, skippedNoClasses: 0 };
-  }
   if (semesterWindow?.startDate && requestedStart && requestedStart < semesterWindow.startDate) {
     return { created: 0, skippedHolidayDates: 0, skippedExisting: 0, skippedNoClasses: 0 };
   }
@@ -311,9 +307,9 @@ export async function generateClassSessions(input: {
       e.day_of_week,
       COALESCE(e.timing_slot_id, e.period_slot_id) AS timing_slot_id,
       e.subject_id,
-      e.subject_code,
-      e.subject_name,
-      e.subject_type_snapshot,
+      COALESCE(NULLIF(TRIM(e.subject_code), ''), NULLIF(TRIM(e.custom_label), ''), NULLIF(TRIM(s.label), ''), 'SPECIAL') AS subject_code,
+      COALESCE(NULLIF(TRIM(e.subject_name), ''), NULLIF(TRIM(e.custom_label), ''), NULLIF(TRIM(s.label), ''), 'Special Slot') AS subject_name,
+      COALESCE(e.subject_type_snapshot, e.entry_type, 'special') AS subject_type_snapshot,
       e.entry_type,
       e.faculty_staff_link_id,
       e.room_label,
@@ -325,8 +321,10 @@ export async function generateClassSessions(input: {
     INNER JOIN ap_timing_template_slots s
       ON s.id = COALESCE(e.timing_slot_id, e.period_slot_id)
     WHERE e.plan_id = ?
-      AND s.slot_type = 'CLASS'
-      AND e.subject_id IS NOT NULL
+      AND (
+        (s.slot_type = 'CLASS' AND e.subject_id IS NOT NULL)
+        OR (e.faculty_staff_link_id IS NOT NULL)
+      )
     `,
     [plan.id],
   );

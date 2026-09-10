@@ -1769,6 +1769,20 @@ export async function publishTimetablePlan(
       ],
     );
 
+    // Cancel unposted scheduled sessions from superseded plans so they don't produce duplicate slots
+    await conn.execute(
+      `
+      UPDATE ap_class_sessions cs
+      INNER JOIN ap_timetable_plans p ON p.id = cs.plan_id
+      SET cs.status = 'cancelled'
+      WHERE p.status = 'superseded'
+        AND cs.status = 'scheduled'
+        AND NOT EXISTS (
+          SELECT 1 FROM ap_attendance_posts ap WHERE ap.class_session_id = cs.id
+        )
+      `,
+    );
+
     await conn.execute(
       `
       UPDATE ap_timetable_plans
