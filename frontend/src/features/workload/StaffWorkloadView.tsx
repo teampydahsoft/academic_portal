@@ -86,7 +86,7 @@ function formatDayLoad(row: FacultyLoad, day: (typeof DAY_COLUMNS)[number]["key"
   return hours > 0 ? `${periods}p · ${hours}h` : `${periods}p`;
 }
 
-export function StaffWorkloadView() {
+export function StaffWorkloadView({ embedded = false }: { embedded?: boolean }) {
   const [summary, setSummary] = useState<WorkloadSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -162,21 +162,23 @@ export function StaffWorkloadView() {
 
   return (
     <div>
-      <PageHeader
-        title="Staff Workload"
-        description={
-          summary?.source ||
-          "Teaching hours from published timetables across all branches. Filter by division or department."
-        }
-        actions={
-          <Button
-            variant={freeOnly ? "primary" : "secondary"}
-            onClick={() => setFreeOnly((prev) => !prev)}
-          >
-            {freeOnly ? "Show all faculty" : "Find underloaded faculty"}
-          </Button>
-        }
-      />
+      {!embedded ? (
+        <PageHeader
+          title="Staff Workload"
+          description={
+            summary?.source ||
+            "Teaching hours from published timetables across all branches. Filter by division or department."
+          }
+          actions={
+            <Button
+              variant={freeOnly ? "primary" : "secondary"}
+              onClick={() => setFreeOnly((prev) => !prev)}
+            >
+              {freeOnly ? "Show all faculty" : "Find underloaded faculty"}
+            </Button>
+          }
+        />
+      ) : null}
 
       <div className="mb-4 flex flex-col gap-3 rounded-lg border border-border bg-card p-3 sm:flex-row sm:flex-wrap sm:items-center">
         <input

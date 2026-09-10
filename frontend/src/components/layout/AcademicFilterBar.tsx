@@ -16,6 +16,7 @@ const searchClassName =
 
 const HIDDEN_ON = [
   "/",
+  "/reports",
   "/settings",
   "/faculty-departments",
   "/curriculum-subjects",

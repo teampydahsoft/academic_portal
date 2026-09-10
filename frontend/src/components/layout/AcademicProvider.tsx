@@ -179,9 +179,9 @@ export function AcademicProvider({ children }: { children: React.ReactNode }) {
         });
         setFiltersState((prev) => {
           const academicYear =
-            prev.academicYear ||
-            data.academicYears.find((y) => y.label === "2026-2027")?.label ||
+            data.defaults?.academicYear ||
             data.academicYears.find((y) => y.isActive)?.label ||
+            prev.academicYear ||
             data.academicYears[0]?.label ||
             "";
 

@@ -2024,6 +2024,7 @@ export async function listTimetableSections(filters: TimetablePlannerFilters = {
     (RowDataPacket & {
       branch_id: number;
       batch: string;
+      semester_number: number | null;
       section_name: string;
       branch_name: string | null;
       student_count: number;
@@ -2048,6 +2049,129 @@ export async function listTimetableSections(filters: TimetablePlannerFilters = {
     branchName: row.branch_name ?? `Branch ${row.branch_id}`,
     studentCount: Number(row.student_count),
   }));
+}
+
+export async function listTimetableReportRows(filters: TimetablePlannerFilters = {}) {
+  const where = ["p.academic_year_label = ?", "p.status NOT IN ('superseded', 'archived')"];
+  const params: unknown[] = [filters.academicYear ?? ""];
+  if (filters.collegeId) {
+    where.push("p.college_id = ?");
+    params.push(filters.collegeId);
+  }
+  if (filters.courseId) {
+    where.push("p.course_id = ?");
+    params.push(filters.courseId);
+  }
+  if (filters.branchId) {
+    where.push("p.branch_id = ?");
+    params.push(filters.branchId);
+  }
+  const rows = await queryAcademic<
+    (RowDataPacket & {
+      plan_id: number;
+      college_id: number;
+      course_id: number;
+      branch_id: number;
+      batch: string;
+      section_name: string | null;
+      status: string;
+      day_of_week: string | null;
+      period_slot_id: number | null;
+      subject_code: string | null;
+      subject_name: string | null;
+      custom_label: string | null;
+      room_label: string | null;
+      slot_label: string | null;
+      slot_start: string | null;
+      slot_end: string | null;
+      slot_type: string | null;
+      slot_order: number | null;
+      faculty_name: string | null;
+    })[]
+  >(
+    `
+    SELECT p.id AS plan_id, p.college_id, p.course_id, p.branch_id, p.batch,
+               p.section_name, p.status, p.semester_number, e.day_of_week, e.period_slot_id,
+              e.subject_code, e.subject_name, e.custom_label, e.room_label,
+              s.label AS slot_label, s.start_time AS slot_start, s.end_time AS slot_end,
+              s.slot_type, s.slot_order, sl.display_name AS faculty_name
+    FROM ap_timetable_plans p
+    LEFT JOIN ap_timetable_entries e ON e.plan_id = p.id
+    LEFT JOIN ap_timing_templates t ON t.college_id = p.college_id
+      AND t.academic_year_label = p.academic_year_label
+      AND t.semester_number = p.semester_number
+      AND t.status = 'active'
+    LEFT JOIN ap_timing_template_slots s ON s.template_id = t.id
+      AND s.id = COALESCE(e.timing_slot_id, e.period_slot_id)
+            LEFT JOIN ap_staff_link sl ON sl.id = e.faculty_staff_link_id
+    WHERE ${where.join(" AND ")}
+    ORDER BY p.college_id, p.course_id, p.branch_id, p.batch, p.section_name,
+             e.day_of_week, e.period_slot_id
+    `,
+    params,
+  );
+  const timingCache = new Map<string, Awaited<ReturnType<typeof listTimingSlots>>>();
+  for (const row of rows) {
+    const key = `${row.college_id}:${filters.academicYear}:${row.semester_number ?? 0}`;
+    if (timingCache.has(key) || !row.semester_number || !filters.academicYear) continue;
+    const timing = await getActiveTimingForContext({
+      collegeId: Number(row.college_id),
+      academicYear: filters.academicYear,
+      semester: Number(row.semester_number),
+    });
+    timingCache.set(key, timing ? await listTimingSlots(timing.id) : []);
+  }
+  const mapped = rows.map((row) => {
+    const slots = timingCache.get(`${row.college_id}:${filters.academicYear}:${row.semester_number ?? 0}`) ?? [];
+    const slot = slots.find((item) => item.id === Number(row.period_slot_id)) ??
+      slots.find((item) => item.slotOrder === Number(row.period_slot_id));
+    return {
+    planId: Number(row.plan_id),
+    collegeId: Number(row.college_id),
+    courseId: Number(row.course_id),
+    branchId: Number(row.branch_id),
+    batch: row.batch,
+    section: row.section_name,
+    status: row.status,
+    day: row.day_of_week,
+    slotId: row.period_slot_id,
+    label: row.subject_code || row.custom_label || row.subject_name || "Unassigned",
+    subjectName: row.subject_name,
+    room: row.room_label,
+    slotLabel: slot?.label ?? row.slot_label,
+    startTime: slot?.startTime ?? row.slot_start,
+    endTime: slot?.endTime ?? row.slot_end,
+    slotType: slot?.slotType ?? row.slot_type,
+    slotOrder: slot?.slotOrder ?? row.slot_order,
+    facultyName: row.faculty_name,
+    };
+  });
+  const planKeys = new Map<string, typeof mapped[number]>();
+  for (const row of mapped) {
+    planKeys.set(`${row.planId}:${row.batch}`, row);
+  }
+  for (const sample of planKeys.values()) {
+    const slots = timingCache.get(`${sample.collegeId}:${filters.academicYear}:${rows.find((row) => Number(row.plan_id) === sample.planId)?.semester_number ?? 0}`) ?? [];
+    const existingSlotIds = new Set(mapped.filter((row) => row.planId === sample.planId).map((row) => row.slotId));
+    for (const slot of slots) {
+      if (existingSlotIds.has(slot.id)) continue;
+      mapped.push({
+        ...sample,
+        day: null,
+        slotId: slot.id,
+        label: "",
+        subjectName: null,
+        room: null,
+        slotLabel: slot.label,
+        startTime: slot.startTime,
+        endTime: slot.endTime,
+        slotType: slot.slotType,
+        slotOrder: slot.slotOrder,
+        facultyName: null,
+      });
+    }
+  }
+  return mapped;
 }
 
 export async function getTimingTemplateForFilters(filters: TimetablePlannerFilters) {
