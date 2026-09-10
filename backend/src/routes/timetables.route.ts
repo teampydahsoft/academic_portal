@@ -14,6 +14,7 @@ import {
   getTimingTemplateForFilters,
   listFacultyOptions,
   listSubjectsForPlanner,
+  listTimetableReportRows,
   listTimetableSections,
   publishTimetablePlan,
   reviewTimetablePlan,
@@ -121,6 +122,14 @@ timetablesRouter.post("/timing", requirePermission("timetable.edit"), async (req
 timetablesRouter.get("/planner", requirePermission("timetable.view"), async (req: AuthedRequest, res, next) => {
   try {
     res.json(await getTimetablePlanner(filtersFromQuery(req)));
+  } catch (error) {
+    sendAuthzError(res, error, next);
+  }
+});
+
+timetablesRouter.get("/report", requirePermission("timetable.view"), async (req: AuthedRequest, res, next) => {
+  try {
+    res.json({ data: await listTimetableReportRows(filtersFromQuery(req)) });
   } catch (error) {
     sendAuthzError(res, error, next);
   }

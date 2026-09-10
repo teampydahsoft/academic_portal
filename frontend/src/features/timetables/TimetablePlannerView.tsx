@@ -230,7 +230,7 @@ function FacultyPickerMeta({
   );
 }
 
-export function TimetablePlannerView() {
+export function TimetablePlannerView({ embedded = false }: { embedded?: boolean }) {
   const { filters, masters } = useAcademicContext();
   const { hasPermission, hasAnyPermission } = useAuth();
   const canEdit = hasPermission("timetable.edit");
@@ -748,7 +748,7 @@ export function TimetablePlannerView() {
 
   return (
     <div>
-      <div className="mb-5 flex flex-col items-center text-center gap-2">
+      {!embedded ? <div className="mb-5 flex flex-col items-center text-center gap-2">
         <h1 className="text-[28px] font-bold leading-tight text-navy-900">
           Timetable
         </h1>
@@ -796,7 +796,7 @@ export function TimetablePlannerView() {
             </Button>
           ) : null}
         </div>
-      </div>
+      </div> : null}
 
       {missingLabel ? (
         <Card className="mb-4">

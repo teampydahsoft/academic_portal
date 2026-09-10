@@ -297,7 +297,7 @@ function getMonday(d: Date) {
   return `${y}-${m}-${dayStr}`;
 }
 
-export function AttendanceAnalyticsView() {
+export function AttendanceAnalyticsView({ embedded = false }: { embedded?: boolean }) {
   const { filters, setFilters } = useAcademicContext();
   const [activeTab, setActiveTab] = useState<TabType>("today");
 
@@ -754,9 +754,11 @@ export function AttendanceAnalyticsView() {
       {/* Compact Top Header Bar: Title + Tabs + Export */}
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 pb-2">
         <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-base font-bold text-navy-900 tracking-tight flex items-center gap-2">
-            <span>Attendance Analytics</span>
-          </h1>
+          {!embedded ? (
+            <h1 className="text-base font-bold text-navy-900 tracking-tight flex items-center gap-2">
+              <span>Attendance Analytics</span>
+            </h1>
+          ) : null}
 
           {/* Compact Pill Tabs */}
           <nav className="inline-flex items-center rounded-lg bg-slate-100 p-0.5" aria-label="Tabs">
@@ -858,14 +860,16 @@ export function AttendanceAnalyticsView() {
         </div>
 
         {/* Action button */}
-        <button
-          type="button"
-          onClick={handleExportCSV}
-          className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 shadow-2xs hover:bg-slate-50 transition-colors"
-        >
-          <Download className="h-3.5 w-3.5 text-slate-500" />
-          <span>Export CSV</span>
-        </button>
+        {!embedded ? (
+          <button
+            type="button"
+            onClick={handleExportCSV}
+            className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 shadow-2xs hover:bg-slate-50 transition-colors"
+          >
+            <Download className="h-3.5 w-3.5 text-slate-500" />
+            <span>Export CSV</span>
+          </button>
+        ) : null}
       </div>
 
       {/* Unified Compact Action Toolbar (Zero wasted vertical space) */}
