@@ -21,6 +21,8 @@ import {
   timingSlotDisplayLabel,
 } from "@/features/timetables/timing-slot-utils";
 
+import { useSearchParams } from "next/navigation";
+
 type ReportKey =
   "department-timetables" | "staff-timetables" | "student-analytics";
 
@@ -50,7 +52,16 @@ const REPORT_TABS: ReportDef[] = [
 
 export function ReportsView() {
   const { hasAnyPermission } = useAuth();
+  const searchParams = useSearchParams();
+  const tabParam = searchParams.get("tab") as ReportKey | null;
+
   const [selectedKey, setSelectedKey] = useState<ReportKey | null>(null);
+
+  useEffect(() => {
+    if (tabParam && REPORT_TABS.some((t) => t.key === tabParam)) {
+      setSelectedKey(tabParam);
+    }
+  }, [tabParam]);
 
   const visibleTabs = useMemo(
     () => REPORT_TABS.filter((tab) => hasAnyPermission(...tab.permissions)),
@@ -69,10 +80,12 @@ export function ReportsView() {
     return <AttendanceAnalyticsView embedded />;
   }
 
+  const pageTitle = activeTab ? activeTab.title : "Reports";
+
   return (
     <div>
       <PageHeader
-        title="Reports"
+        title={pageTitle}
         description="Live reports from the selected academic scope."
       />
 
@@ -83,31 +96,8 @@ export function ReportsView() {
         />
       ) : (
         <div>
-          <div
-            className="flex flex-wrap gap-2 border-b border-border pb-3"
-            role="tablist"
-            aria-label="Report categories"
-          >
-            {visibleTabs.map((tab) => (
-              <button
-                key={tab.key}
-                type="button"
-                role="tab"
-                aria-selected={activeTab?.key === tab.key}
-                onClick={() => setSelectedKey(tab.key)}
-                className={`rounded-md px-3 py-2 text-sm font-medium transition-colors ${
-                  activeTab?.key === tab.key
-                    ? "bg-navy-900 text-white"
-                    : "text-slate-600 hover:bg-slate-100 hover:text-navy-900"
-                }`}
-              >
-                {tab.title}
-              </button>
-            ))}
-          </div>
-
           {activeTab ? (
-            <div className="mt-4">{renderActiveReport()}</div>
+            <div className="mt-2">{renderActiveReport()}</div>
           ) : null}
         </div>
       )}

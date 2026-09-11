@@ -4,6 +4,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import {
+  ChevronDown,
+  ChevronRight,
   LogOut,
   PanelLeftClose,
   PanelLeftOpen,
@@ -29,6 +31,7 @@ export function Sidebar({ open, collapsed, onClose, onToggleCollapsed }: Props) 
   const { user, authorization, logout, refresh, hasAnyPermission, hasPermission } =
     useAuth();
   const [profileOpen, setProfileOpen] = useState(false);
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
 
   const teachingStaffOnly = isTeachingStaffOnly(authorization);
   const superAdminUser = isSuperAdminUser(authorization);
@@ -41,6 +44,33 @@ export function Sidebar({ open, collapsed, onClose, onToggleCollapsed }: Props) 
       }),
     [hasAnyPermission, teachingStaffOnly, superAdminUser],
   );
+
+  const activeNavItem = useMemo(() => navItemForPath(pathname), [pathname]);
+
+  // Auto-expand group containing the active page on load & navigation
+  useEffect(() => {
+    if (!activeNavItem) return;
+    const parentGroup = groups.find((g) =>
+      g.items.some(
+        (item) => item.href.split("?")[0] === activeNavItem.href.split("?")[0],
+      ),
+    );
+    if (parentGroup) {
+      setExpandedGroups({
+        [parentGroup.title]: true,
+      });
+    }
+  }, [pathname, groups, activeNavItem]);
+
+  const toggleGroup = (title: string) => {
+    setExpandedGroups((prev) => {
+      const isOpen = Boolean(prev[title]);
+      if (isOpen) {
+        return {};
+      }
+      return { [title]: true };
+    });
+  };
 
   const roleLabel = useMemo(() => {
     const roles = authorization?.roles ?? [];
@@ -68,7 +98,7 @@ export function Sidebar({ open, collapsed, onClose, onToggleCollapsed }: Props) 
       <aside
         className={cn(
           "fixed inset-y-0 left-0 z-50 flex h-dvh max-h-dvh flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-[width,transform] duration-200 lg:static lg:h-full lg:max-h-none lg:translate-x-0",
-          collapsed ? "w-[72px]" : "w-[220px]",
+          collapsed ? "w-[72px]" : "w-[240px]",
           open ? "translate-x-0" : "-translate-x-full lg:translate-x-0",
         )}
       >
@@ -117,53 +147,191 @@ export function Sidebar({ open, collapsed, onClose, onToggleCollapsed }: Props) 
         </div>
 
         <nav className="sidebar-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 py-3">
-          {groups.map((group) => (
-            <div key={group.title} className={cn("mb-3", collapsed && "mb-2")}>
-              {!collapsed ? (
-                <p className="mb-1 px-2 text-[10px] font-semibold uppercase tracking-wider text-sidebar-muted">
-                  {group.title}
-                </p>
-              ) : (
-                <div className="mx-auto mb-1 h-px w-6 bg-sidebar-border" />
-              )}
-              <ul className="space-y-0.5">
-                {group.items.map((item) => {
-                  const active = navItemForPath(pathname)?.href === item.href;
-                  const Icon = item.icon;
-                  const label = navLabelForItem(item, { superAdminUser });
-                  return (
-                    <li key={item.href}>
-                      <Link
-                        href={item.href}
-                        title={collapsed ? label : undefined}
-                        onClick={onClose}
-                        className={cn(
-                          "group relative flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] font-medium transition-colors",
-                          collapsed && "justify-center px-2",
-                          active
-                            ? "bg-sidebar-active text-sidebar-foreground"
-                            : "text-sidebar-muted hover:bg-sidebar-hover hover:text-sidebar-foreground",
-                        )}
-                      >
-                        {active ? (
-                          <span className="absolute -left-2 top-1/2 -mt-2.5 h-5 w-1 rounded-r-md bg-brand-600" />
-                        ) : null}
-                        <Icon
+          {groups.map((group) => {
+            const GroupIcon = group.icon;
+            const isGroupActive = group.items.some(
+              (item) => activeNavItem?.href === item.href,
+            );
+            const isGroupExpanded = expandedGroups[group.title] ?? isGroupActive;
+            const hasMultiple = group.items.length > 1;
+
+            if (collapsed) {
+              return (
+                <div key={group.title} className="group/collapsed-group relative mb-2">
+                  <button
+                    type="button"
+                    onClick={() => toggleGroup(group.title)}
+                    className={cn(
+                      "mx-auto flex h-10 w-10 items-center justify-center rounded-lg transition-all",
+                      isGroupActive
+                        ? "bg-sidebar-active text-brand-600 shadow-sm"
+                        : "text-sidebar-muted hover:bg-sidebar-hover hover:text-sidebar-foreground",
+                    )}
+                    title={group.title}
+                  >
+                    <GroupIcon className="h-5 w-5" />
+                  </button>
+
+                  {/* Flyout menu on hover in collapsed mode */}
+                  <div className="pointer-events-none absolute left-full top-0 z-50 ml-2.5 w-56 opacity-0 transition-all duration-150 group-hover/collapsed-group:pointer-events-auto group-hover/collapsed-group:opacity-100">
+                    <div className="rounded-xl border border-sidebar-border bg-sidebar p-2 shadow-xl">
+                      <div className="mb-1 flex items-center justify-between border-b border-sidebar-border/60 px-2.5 py-1.5">
+                        <p className="text-[11px] font-semibold uppercase tracking-wider text-brand-600">
+                          {group.title}
+                        </p>
+                        <span className="rounded-full bg-sidebar-active px-1.5 py-0.2 text-[10px] font-medium text-sidebar-muted">
+                          {group.items.length}
+                        </span>
+                      </div>
+                      <ul className="space-y-0.5">
+                        {group.items.map((item) => {
+                          const active = activeNavItem?.href === item.href;
+                          const ItemIcon = item.icon;
+                          const label = navLabelForItem(item, { superAdminUser });
+                          return (
+                            <li key={item.href}>
+                              <Link
+                                href={item.href}
+                                onClick={onClose}
+                                className={cn(
+                                  "flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
+                                  active
+                                    ? "bg-sidebar-active font-semibold text-sidebar-foreground"
+                                    : "text-sidebar-muted hover:bg-sidebar-hover hover:text-sidebar-foreground",
+                                )}
+                              >
+                                <ItemIcon
+                                  className={cn(
+                                    "h-3.5 w-3.5 shrink-0",
+                                    active ? "text-brand-600" : "text-sidebar-muted",
+                                  )}
+                                />
+                                <span className="truncate">{label}</span>
+                              </Link>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              );
+            }
+
+            return (
+              <div key={group.title} className="mb-2">
+                {hasMultiple ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => toggleGroup(group.title)}
+                      className={cn(
+                        "flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-xs font-normal transition-all",
+                        isGroupActive
+                          ? "bg-sidebar-hover/70 text-sidebar-foreground"
+                          : "text-sidebar-muted/80 hover:bg-sidebar-hover hover:text-sidebar-foreground",
+                      )}
+                    >
+                      <div className="flex min-w-0 items-center gap-2">
+                        <GroupIcon
                           className={cn(
-                            "h-4 w-4 shrink-0",
-                            active
-                              ? "text-brand-600"
-                              : "text-sidebar-muted group-hover:text-sidebar-foreground",
+                            "h-3.5 w-3.5 shrink-0 opacity-70",
+                            isGroupActive ? "text-brand-600 opacity-100" : "text-sidebar-muted/70",
                           )}
                         />
-                        {!collapsed ? <span className="truncate">{label}</span> : null}
-                      </Link>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          ))}
+                        <span className="truncate text-[11px] font-normal uppercase tracking-wider text-sidebar-muted/80">
+                          {group.title}
+                        </span>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        <span className="rounded-full bg-sidebar-border/50 px-1.5 py-0.2 text-[9px] font-normal text-sidebar-muted/70">
+                          {group.items.length}
+                        </span>
+                        {isGroupExpanded ? (
+                          <ChevronDown className="h-3 w-3 text-sidebar-muted/60" />
+                        ) : (
+                          <ChevronRight className="h-3 w-3 text-sidebar-muted/60" />
+                        )}
+                      </div>
+                    </button>
+
+                    {isGroupExpanded ? (
+                      <ul className="ml-3.5 mt-1 space-y-0.5 border-l border-sidebar-border/60 pl-2.5">
+                        {group.items.map((item) => {
+                          const active = activeNavItem?.href === item.href;
+                          const ItemIcon = item.icon;
+                          const label = navLabelForItem(item, { superAdminUser });
+                          return (
+                            <li key={item.href}>
+                              <Link
+                                href={item.href}
+                                onClick={onClose}
+                                className={cn(
+                                  "group relative flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-xs font-normal transition-colors",
+                                  active
+                                    ? "bg-sidebar-active font-medium text-sidebar-foreground"
+                                    : "text-sidebar-muted hover:bg-sidebar-hover hover:text-sidebar-foreground",
+                                )}
+                              >
+                                {active ? (
+                                  <span className="absolute -left-2.5 top-1/2 -mt-2 h-4 w-1 rounded-r-md bg-brand-600" />
+                                ) : null}
+                                <ItemIcon
+                                  className={cn(
+                                    "h-3.5 w-3.5 shrink-0",
+                                    active
+                                      ? "text-brand-600"
+                                      : "text-sidebar-muted group-hover:text-sidebar-foreground",
+                                  )}
+                                />
+                                <span className="truncate">{label}</span>
+                              </Link>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    ) : null}
+                  </>
+                ) : (
+                  // Single-item group rendered as top-level link
+                  <ul className="space-y-0.5">
+                    {group.items.map((item) => {
+                      const active = activeNavItem?.href === item.href;
+                      const ItemIcon = item.icon;
+                      const label = navLabelForItem(item, { superAdminUser });
+                      return (
+                        <li key={item.href}>
+                          <Link
+                            href={item.href}
+                            onClick={onClose}
+                            className={cn(
+                              "group relative flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs font-normal transition-colors",
+                              active
+                                ? "bg-sidebar-active font-medium text-sidebar-foreground"
+                                : "text-sidebar-muted hover:bg-sidebar-hover hover:text-sidebar-foreground",
+                            )}
+                          >
+                            {active ? (
+                              <span className="absolute -left-2 top-1/2 -mt-2 h-4 w-1 rounded-r-md bg-brand-600" />
+                            ) : null}
+                            <ItemIcon
+                              className={cn(
+                                "h-4 w-4 shrink-0",
+                                active
+                                  ? "text-brand-600"
+                                  : "text-sidebar-muted group-hover:text-sidebar-foreground",
+                              )}
+                            />
+                            <span className="truncate font-normal">{label}</span>
+                          </Link>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
+            );
+          })}
         </nav>
 
         <div

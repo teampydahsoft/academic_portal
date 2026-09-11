@@ -66,6 +66,8 @@ attendanceRouter.get(
       res.json(
         await listAttendanceSessions({
           date: str(req.query.date),
+          startDate: str(req.query.startDate),
+          endDate: str(req.query.endDate),
           collegeId: isStaff ? undefined : scoped.collegeId,
           collegeIds: isStaff ? undefined : scoped.collegeIds,
           courseId: isStaff ? undefined : num(req.query.courseId),

@@ -328,13 +328,13 @@ export const PERMISSION_MATRIX_MODULES: MatrixModuleDef[] = [
     permissions: [asDef("attendance_analytics.view")],
   },
   {
-    group: "Academics",
+    group: "System",
     label: "Faculty & Departments",
     href: "/faculty-departments",
     permissions: [asDef("faculty.view")],
   },
   {
-    group: "Academics",
+    group: "System",
     label: "Curriculum & Subjects",
     href: "/curriculum-subjects",
     permissions: [asDef("catalog.view")],
@@ -372,7 +372,7 @@ export const PERMISSION_MATRIX_MODULES: MatrixModuleDef[] = [
     permissions: [asDef("pending_exceptions.view")],
   },
   {
-    group: "Operations",
+    group: "Reports",
     label: "Reports",
     href: "/reports",
     permissions: [asDef("reports.view")],
