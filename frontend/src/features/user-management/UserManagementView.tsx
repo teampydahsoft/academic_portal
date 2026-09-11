@@ -5,6 +5,7 @@ import { RefreshCw, UserRound } from "lucide-react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { LoadingAnimation } from "@/components/ui/LoadingAnimation";
 import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
 import { FilterBar, FilterField } from "@/components/ui/FilterBar";
 import { StatusBadge } from "@/components/ui/StatusBadge";
@@ -571,9 +572,7 @@ export function UserManagementView() {
       </FilterBar>
 
       {state.status === "loading" ? (
-        <Card>
-          <p className="text-sm text-slate-500">Loading users…</p>
-        </Card>
+        <LoadingAnimation label="Loading users…" />
       ) : null}
       {state.status === "error" ? (
         <Card>

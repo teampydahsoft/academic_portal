@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import {
   ChevronDown,
@@ -12,7 +12,7 @@ import {
   UserRound,
   X,
 } from "lucide-react";
-import { NAV_GROUPS, filterNavGroups, navItemForPath, navLabelForItem } from "@/lib/navigation";
+import { NAV_GROUPS, filterNavGroups, navLabelForItem } from "@/lib/navigation";
 import { cn } from "@/lib/cn";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { isTeachingStaffOnly, isSuperAdminUser } from "@/lib/teaching-scope";
@@ -28,6 +28,7 @@ type Props = {
 
 export function Sidebar({ open, collapsed, onClose, onToggleCollapsed }: Props) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const { user, authorization, logout, refresh, hasAnyPermission, hasPermission } =
     useAuth();
   const [profileOpen, setProfileOpen] = useState(false);
@@ -45,22 +46,53 @@ export function Sidebar({ open, collapsed, onClose, onToggleCollapsed }: Props) 
     [hasAnyPermission, teachingStaffOnly, superAdminUser],
   );
 
-  const activeNavItem = useMemo(() => navItemForPath(pathname), [pathname]);
+  const isItemActive = (href: string) => {
+    const [itemPath, itemQuery] = href.split("?");
+
+    if (itemQuery) {
+      if (pathname !== itemPath) return false;
+      const itemParams = new URLSearchParams(itemQuery);
+      let matched = true;
+      itemParams.forEach((val, key) => {
+        const currentVal = searchParams.get(key);
+        if (currentVal !== val) {
+          if (
+            pathname === "/reports" &&
+            key === "tab" &&
+            val === "department-timetables" &&
+            !currentVal
+          ) {
+            return;
+          }
+          matched = false;
+        }
+      });
+      return matched;
+    }
+
+    if (pathname === itemPath) return true;
+
+    if (pathname.startsWith(`${itemPath}/`)) {
+      const hasExactOtherMatch = groups.some((g) =>
+        g.items.some((i) => i.href.split("?")[0] === pathname),
+      );
+      return !hasExactOtherMatch;
+    }
+
+    return false;
+  };
 
   // Auto-expand group containing the active page on load & navigation
   useEffect(() => {
-    if (!activeNavItem) return;
     const parentGroup = groups.find((g) =>
-      g.items.some(
-        (item) => item.href.split("?")[0] === activeNavItem.href.split("?")[0],
-      ),
+      g.items.some((item) => isItemActive(item.href)),
     );
     if (parentGroup) {
       setExpandedGroups({
         [parentGroup.title]: true,
       });
     }
-  }, [pathname, groups, activeNavItem]);
+  }, [pathname, searchParams, groups]);
 
   const toggleGroup = (title: string) => {
     setExpandedGroups((prev) => {
@@ -116,17 +148,17 @@ export function Sidebar({ open, collapsed, onClose, onToggleCollapsed }: Props) 
           />
           {!collapsed ? (
             <div className="min-w-0 flex-1">
-              <p className="truncate text-[11px] font-medium uppercase tracking-[0.12em] text-brand-600">
+              <p className="truncate text-[11px] font-medium uppercase tracking-[0.12em] text-brand-500">
                 Pydah Group
               </p>
-              <h1 className="truncate text-sm font-semibold text-sidebar-foreground">
+              <h1 className="truncate text-sm font-semibold text-white">
                 Academic Portal
               </h1>
             </div>
           ) : null}
           <button
             type="button"
-            className="rounded-md p-1.5 text-sidebar-muted hover:bg-sidebar-hover lg:hidden"
+            className="rounded-md p-1.5 text-slate-300 hover:bg-sidebar-hover lg:hidden"
             onClick={onClose}
             aria-label="Close navigation"
           >
@@ -134,7 +166,7 @@ export function Sidebar({ open, collapsed, onClose, onToggleCollapsed }: Props) 
           </button>
           <button
             type="button"
-            className="hidden rounded-md p-1.5 text-sidebar-muted hover:bg-sidebar-hover lg:inline-flex"
+            className="hidden rounded-md p-1.5 text-slate-300 hover:bg-sidebar-hover lg:inline-flex"
             onClick={onToggleCollapsed}
             aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           >
@@ -149,9 +181,7 @@ export function Sidebar({ open, collapsed, onClose, onToggleCollapsed }: Props) 
         <nav className="sidebar-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 py-3">
           {groups.map((group) => {
             const GroupIcon = group.icon;
-            const isGroupActive = group.items.some(
-              (item) => activeNavItem?.href === item.href,
-            );
+            const isGroupActive = group.items.some((item) => isItemActive(item.href));
             const isGroupExpanded = expandedGroups[group.title] ?? isGroupActive;
             const hasMultiple = group.items.length > 1;
 
@@ -164,8 +194,8 @@ export function Sidebar({ open, collapsed, onClose, onToggleCollapsed }: Props) 
                     className={cn(
                       "mx-auto flex h-10 w-10 items-center justify-center rounded-lg transition-all",
                       isGroupActive
-                        ? "bg-sidebar-active text-brand-600 shadow-sm"
-                        : "text-sidebar-muted hover:bg-sidebar-hover hover:text-sidebar-foreground",
+                        ? "bg-sidebar-active text-white shadow-sm"
+                        : "text-slate-300 hover:bg-sidebar-hover hover:text-white",
                     )}
                     title={group.title}
                   >
@@ -176,16 +206,16 @@ export function Sidebar({ open, collapsed, onClose, onToggleCollapsed }: Props) 
                   <div className="pointer-events-none absolute left-full top-0 z-50 ml-2.5 w-56 opacity-0 transition-all duration-150 group-hover/collapsed-group:pointer-events-auto group-hover/collapsed-group:opacity-100">
                     <div className="rounded-xl border border-sidebar-border bg-sidebar p-2 shadow-xl">
                       <div className="mb-1 flex items-center justify-between border-b border-sidebar-border/60 px-2.5 py-1.5">
-                        <p className="text-[11px] font-semibold uppercase tracking-wider text-brand-600">
+                        <p className="text-[11px] font-semibold uppercase tracking-wider text-brand-400">
                           {group.title}
                         </p>
-                        <span className="rounded-full bg-sidebar-active px-1.5 py-0.2 text-[10px] font-medium text-sidebar-muted">
+                        <span className="rounded-full bg-sidebar-active px-1.5 py-0.2 text-[10px] font-medium text-slate-200">
                           {group.items.length}
                         </span>
                       </div>
                       <ul className="space-y-0.5">
                         {group.items.map((item) => {
-                          const active = activeNavItem?.href === item.href;
+                          const active = isItemActive(item.href);
                           const ItemIcon = item.icon;
                           const label = navLabelForItem(item, { superAdminUser });
                           return (
@@ -196,14 +226,14 @@ export function Sidebar({ open, collapsed, onClose, onToggleCollapsed }: Props) 
                                 className={cn(
                                   "flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
                                   active
-                                    ? "bg-sidebar-active font-semibold text-sidebar-foreground"
-                                    : "text-sidebar-muted hover:bg-sidebar-hover hover:text-sidebar-foreground",
+                                    ? "bg-sidebar-active font-semibold text-white"
+                                    : "text-slate-300 hover:bg-sidebar-hover hover:text-white",
                                 )}
                               >
                                 <ItemIcon
                                   className={cn(
                                     "h-3.5 w-3.5 shrink-0",
-                                    active ? "text-brand-600" : "text-sidebar-muted",
+                                    active ? "text-brand-400" : "text-slate-400",
                                   )}
                                 />
                                 <span className="truncate">{label}</span>
@@ -226,39 +256,39 @@ export function Sidebar({ open, collapsed, onClose, onToggleCollapsed }: Props) 
                       type="button"
                       onClick={() => toggleGroup(group.title)}
                       className={cn(
-                        "flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-xs font-normal transition-all",
+                        "flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-xs font-medium transition-all",
                         isGroupActive
-                          ? "bg-sidebar-hover/70 text-sidebar-foreground"
-                          : "text-sidebar-muted/80 hover:bg-sidebar-hover hover:text-sidebar-foreground",
+                          ? "bg-sidebar-hover/80 text-white"
+                          : "text-slate-300 hover:bg-sidebar-hover hover:text-white",
                       )}
                     >
                       <div className="flex min-w-0 items-center gap-2">
                         <GroupIcon
                           className={cn(
-                            "h-3.5 w-3.5 shrink-0 opacity-70",
-                            isGroupActive ? "text-brand-600 opacity-100" : "text-sidebar-muted/70",
+                            "h-3.5 w-3.5 shrink-0",
+                            isGroupActive ? "text-brand-400" : "text-slate-400",
                           )}
                         />
-                        <span className="truncate text-[11px] font-normal uppercase tracking-wider text-sidebar-muted/80">
+                        <span className="truncate text-[11px] font-semibold uppercase tracking-wider text-slate-200">
                           {group.title}
                         </span>
                       </div>
                       <div className="flex shrink-0 items-center gap-1.5">
-                        <span className="rounded-full bg-sidebar-border/50 px-1.5 py-0.2 text-[9px] font-normal text-sidebar-muted/70">
+                        <span className="rounded-full bg-sidebar-border/80 px-1.5 py-0.2 text-[9px] font-medium text-slate-300">
                           {group.items.length}
                         </span>
                         {isGroupExpanded ? (
-                          <ChevronDown className="h-3 w-3 text-sidebar-muted/60" />
+                          <ChevronDown className="h-3 w-3 text-slate-300" />
                         ) : (
-                          <ChevronRight className="h-3 w-3 text-sidebar-muted/60" />
+                          <ChevronRight className="h-3 w-3 text-slate-300" />
                         )}
                       </div>
                     </button>
 
                     {isGroupExpanded ? (
-                      <ul className="ml-3.5 mt-1 space-y-0.5 border-l border-sidebar-border/60 pl-2.5">
+                      <ul className="ml-3.5 mt-1 space-y-0.5 border-l border-sidebar-border/80 pl-2.5">
                         {group.items.map((item) => {
-                          const active = activeNavItem?.href === item.href;
+                          const active = isItemActive(item.href);
                           const ItemIcon = item.icon;
                           const label = navLabelForItem(item, { superAdminUser });
                           return (
@@ -267,21 +297,21 @@ export function Sidebar({ open, collapsed, onClose, onToggleCollapsed }: Props) 
                                 href={item.href}
                                 onClick={onClose}
                                 className={cn(
-                                  "group relative flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-xs font-normal transition-colors",
+                                  "group relative flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
                                   active
-                                    ? "bg-sidebar-active font-medium text-sidebar-foreground"
-                                    : "text-sidebar-muted hover:bg-sidebar-hover hover:text-sidebar-foreground",
+                                    ? "bg-sidebar-active text-white font-semibold shadow-2xs"
+                                    : "text-slate-300 hover:bg-sidebar-hover hover:text-white",
                                 )}
                               >
                                 {active ? (
-                                  <span className="absolute -left-2.5 top-1/2 -mt-2 h-4 w-1 rounded-r-md bg-brand-600" />
+                                  <span className="absolute -left-2.5 top-1/2 -mt-2 h-4 w-1 rounded-r-md bg-brand-400" />
                                 ) : null}
                                 <ItemIcon
                                   className={cn(
                                     "h-3.5 w-3.5 shrink-0",
                                     active
-                                      ? "text-brand-600"
-                                      : "text-sidebar-muted group-hover:text-sidebar-foreground",
+                                      ? "text-brand-400"
+                                      : "text-slate-400 group-hover:text-white",
                                   )}
                                 />
                                 <span className="truncate">{label}</span>
@@ -296,7 +326,7 @@ export function Sidebar({ open, collapsed, onClose, onToggleCollapsed }: Props) 
                   // Single-item group rendered as top-level link
                   <ul className="space-y-0.5">
                     {group.items.map((item) => {
-                      const active = activeNavItem?.href === item.href;
+                      const active = isItemActive(item.href);
                       const ItemIcon = item.icon;
                       const label = navLabelForItem(item, { superAdminUser });
                       return (
@@ -305,24 +335,24 @@ export function Sidebar({ open, collapsed, onClose, onToggleCollapsed }: Props) 
                             href={item.href}
                             onClick={onClose}
                             className={cn(
-                              "group relative flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs font-normal transition-colors",
+                              "group relative flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors",
                               active
-                                ? "bg-sidebar-active font-medium text-sidebar-foreground"
-                                : "text-sidebar-muted hover:bg-sidebar-hover hover:text-sidebar-foreground",
+                                ? "bg-sidebar-active text-white font-semibold shadow-2xs"
+                                : "text-slate-300 hover:bg-sidebar-hover hover:text-white",
                             )}
                           >
                             {active ? (
-                              <span className="absolute -left-2 top-1/2 -mt-2 h-4 w-1 rounded-r-md bg-brand-600" />
+                              <span className="absolute -left-2 top-1/2 -mt-2 h-4 w-1 rounded-r-md bg-brand-400" />
                             ) : null}
                             <ItemIcon
                               className={cn(
                                 "h-4 w-4 shrink-0",
                                 active
-                                  ? "text-brand-600"
-                                  : "text-sidebar-muted group-hover:text-sidebar-foreground",
+                                  ? "text-brand-400"
+                                  : "text-slate-400 group-hover:text-white",
                               )}
                             />
-                            <span className="truncate font-normal">{label}</span>
+                            <span className="truncate font-medium">{label}</span>
                           </Link>
                         </li>
                       );
@@ -350,7 +380,7 @@ export function Sidebar({ open, collapsed, onClose, onToggleCollapsed }: Props) 
                   setProfileOpen(true);
                   onClose();
                 }}
-                className="flex h-9 w-9 items-center justify-center rounded-md text-sidebar-muted transition hover:bg-sidebar-hover disabled:cursor-default disabled:hover:bg-transparent"
+                className="flex h-9 w-9 items-center justify-center rounded-md text-slate-300 transition hover:bg-sidebar-hover hover:text-white disabled:cursor-default disabled:hover:bg-transparent"
                 title={user?.name || "Profile"}
                 aria-label="Profile"
               >
@@ -359,7 +389,7 @@ export function Sidebar({ open, collapsed, onClose, onToggleCollapsed }: Props) 
               <button
                 type="button"
                 onClick={() => void logout()}
-                className="flex h-9 w-9 items-center justify-center rounded-md text-sidebar-muted transition hover:bg-sidebar-hover"
+                className="flex h-9 w-9 items-center justify-center rounded-md text-slate-300 transition hover:bg-sidebar-hover hover:text-white"
                 title="Sign out"
                 aria-label="Sign out"
               >
@@ -379,14 +409,14 @@ export function Sidebar({ open, collapsed, onClose, onToggleCollapsed }: Props) 
                 className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left transition hover:bg-sidebar-hover disabled:cursor-default disabled:hover:bg-transparent"
                 title={canOpenProfile ? "View / edit your profile" : undefined}
               >
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-sidebar-active text-sidebar-muted">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-sidebar-active text-white">
                   <UserRound className="h-4 w-4" />
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[13px] font-medium text-sidebar-foreground">
+                  <span className="block truncate text-[13px] font-medium text-white">
                     {user?.name || "Signed in"}
                   </span>
-                  <span className="block truncate text-[11px] text-sidebar-muted">
+                  <span className="block truncate text-[11px] text-slate-300">
                     {roleLabel || user?.email || user?.username || "HRMS account"}
                   </span>
                 </span>
@@ -394,9 +424,9 @@ export function Sidebar({ open, collapsed, onClose, onToggleCollapsed }: Props) 
               <button
                 type="button"
                 onClick={() => void logout()}
-                className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] font-medium text-sidebar-muted transition hover:bg-sidebar-hover hover:text-sidebar-foreground"
+                className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] font-medium text-slate-300 transition hover:bg-sidebar-hover hover:text-white"
               >
-                <LogOut className="h-4 w-4 shrink-0 text-sidebar-muted" />
+                <LogOut className="h-4 w-4 shrink-0 text-slate-300" />
                 Sign out
               </button>
             </div>

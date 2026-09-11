@@ -15,6 +15,7 @@ import { StudentDetailDrawer } from "@/features/students/StudentDetailDrawer";
 import type { StudentListRow } from "@/features/students/student-types";
 import { apiFetch } from "@/lib/api";
 import { cn } from "@/lib/cn";
+import { LoadingAnimation } from "@/components/ui/LoadingAnimation";
 
 export type StudentRow = StudentListRow;
 
@@ -442,20 +443,8 @@ export function StudentsRegisterView() {
       ) : null}
 
       <div className={cn("relative", loading && sortedStudents.length === 0 && "min-h-[200px]")}>
-        {loading ? (
-          <div
-            className="absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-white/70 backdrop-blur-[1px]"
-            aria-live="polite"
-            aria-busy="true"
-          >
-            <div className="flex items-center gap-3 rounded-lg border border-border bg-card px-4 py-3 shadow-sm">
-              <span
-                className="h-5 w-5 animate-spin rounded-full border-2 border-navy-800 border-t-transparent"
-                aria-hidden
-              />
-              <p className="text-sm font-medium text-navy-900">Loading students…</p>
-            </div>
-          </div>
+        {loading && !students.length ? (
+          <LoadingAnimation label="Loading students…" />
         ) : null}
 
         <DataTable

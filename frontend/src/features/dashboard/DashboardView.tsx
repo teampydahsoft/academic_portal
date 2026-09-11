@@ -19,6 +19,7 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
+import { LoadingAnimation } from "@/components/ui/LoadingAnimation";
 
 export type CommandCenterSummary = {
   activeStudents: number;
@@ -356,11 +357,7 @@ export function DashboardView() {
   }, [authorization]);
 
   if (loading && !summary && !attendance && !myTimetableSummary) {
-    return (
-      <div className="flex h-64 items-center justify-center text-sm text-slate-500">
-        Loading dashboard...
-      </div>
-    );
+    return <LoadingAnimation label="Loading dashboard…" />;
   }
 
   return (

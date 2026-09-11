@@ -353,11 +353,35 @@ export function AcademicFilterBar({ title = "Filters" }: Props) {
       )}
 
       {showSearch ? (
-        <div className="mb-0 flex flex-col gap-3 rounded-lg border border-border bg-card p-3">
-          <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-end gap-3 w-full">
-            {/* Search Input & Mobile Filter Toggle row */}
-            <div className="flex items-end gap-2 w-full sm:w-auto flex-1">
-              <div className="flex-1 min-w-0">
+        <div className="mb-0 flex flex-col gap-2.5 rounded-lg border border-border bg-card p-3">
+          {/* Mobile Search & Filter toggle button */}
+          <div className="flex items-end gap-2 w-full sm:hidden">
+            <div className="flex-1 min-w-0">
+              <FilterField label="Search">
+                <input
+                  type="search"
+                  value={searchDraft}
+                  onChange={(e) => setSearchDraft(e.target.value)}
+                  placeholder="Admission no, name, section"
+                  className={searchClassName}
+                  aria-label="Search students"
+                />
+              </FilterField>
+            </div>
+            <Button
+              type="button"
+              variant="secondary"
+              className="h-9 px-3 text-xs"
+              onClick={() => setMobileFiltersOpen(!mobileFiltersOpen)}
+            >
+              {mobileFiltersOpen ? "Hide Filters" : "Filters"}
+            </Button>
+          </div>
+
+          <div className={`w-full flex-col gap-2.5 ${mobileFiltersOpen ? "flex" : "hidden sm:flex"}`}>
+            {/* ROW 1: Search & Primary Academic Scope */}
+            <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-end gap-2.5 w-full">
+              <div className="hidden sm:block flex-1 min-w-[200px]">
                 <FilterField label="Search">
                   <input
                     type="search"
@@ -369,217 +393,207 @@ export function AcademicFilterBar({ title = "Filters" }: Props) {
                   />
                 </FilterField>
               </div>
-              <Button
-                type="button"
-                variant="secondary"
-                className="h-11 sm:hidden px-3"
-                onClick={() => setMobileFiltersOpen(!mobileFiltersOpen)}
-              >
-                {mobileFiltersOpen ? "Hide Filters" : "Filters"}
-              </Button>
-            </div>
 
-            {/* Rest of the filters - Grid on mobile, flex on desktop */}
-            <div className={`w-full sm:w-auto flex-col sm:flex-row sm:flex-wrap sm:items-end gap-3 ${mobileFiltersOpen ? "flex" : "hidden sm:flex"}`}>
-              <div className="grid grid-cols-2 gap-3 w-full sm:flex sm:w-auto sm:flex-wrap sm:items-end">
-                <FilterField label="Academic Year">
-              <select
-                className={selectClassName}
-                value={filters.academicYear}
-                disabled={loading || !masters}
-                onChange={(e) => setFilters({ academicYear: e.target.value })}
-              >
-                {(masters?.academicYears ?? []).map((year) => (
-                  <option key={year.id} value={year.label}>
-                    {year.label}
-                  </option>
-                ))}
-              </select>
-            </FilterField>
-
-            <FilterField label="College">
-              <select
-                className={selectClassName}
-                value={filters.collegeId === "all" ? "all" : String(filters.collegeId)}
-                disabled={loading || !masters}
-                onChange={(e) =>
-                  setFilters({
-                    collegeId: e.target.value === "all" ? "all" : Number(e.target.value),
-                  })
-                }
-              >
-                {showAllColleges ? <option value="all">All Colleges</option> : null}
-                {(masters?.colleges ?? []).map((college) => (
-                  <option key={college.id} value={college.id}>
-                    {college.name}
-                  </option>
-                ))}
-              </select>
-            </FilterField>
-
-            <FilterField label="Course">
-              <select
-                className={selectClassName}
-                value={filters.courseId === "all" ? "all" : String(filters.courseId)}
-                disabled={loading || !masters}
-                onChange={(e) =>
-                  setFilters({
-                    courseId: e.target.value === "all" ? "all" : Number(e.target.value),
-                    year: "all",
-                    semester: "all",
-                  })
-                }
-              >
-                <option value="all">All Courses</option>
-                {coursesForCollege.map((course) => (
-                  <option key={course.id} value={course.id}>
-                    {course.name}
-                  </option>
-                ))}
-              </select>
-            </FilterField>
-
-            <FilterField label="Branch">
-              <select
-                className={selectClassName}
-                value={filters.branchId === "all" ? "all" : String(filters.branchId)}
-                disabled={loading || !masters}
-                onChange={(e) =>
-                  setFilters({
-                    branchId: e.target.value === "all" ? "all" : Number(e.target.value),
-                  })
-                }
-              >
-                <option value="all">All Branches</option>
-                {branchesForCourse.map((branch) => (
-                  <option key={branch.id} value={branch.id}>
-                    {branch.hasSections
-                      ? `${branch.name} (${branch.sectionCount} section${
-                          branch.sectionCount === 1 ? "" : "s"
-                        })`
-                      : `${branch.name} (no section)`}
-                  </option>
-                ))}
-              </select>
-            </FilterField>
-
-            <FilterField label="Batch">
-              <select
-                className={selectClassName}
-                value={filters.batch === "all" ? "all" : filters.batch}
-                disabled={loading || !masters || !selectedBranch}
-                onChange={(e) => {
-                  const nextBatch = e.target.value === "all" ? "all" : e.target.value;
-                  setFilters({
-                    batch: nextBatch,
-                    ...(showSearch && nextBatch !== "all"
-                      ? { year: "all" as const, semester: "all" as const }
-                      : {}),
-                  });
-                }}
-              >
-                <option value="all">All Batches</option>
-                {batchesForBranch.map((batch) => (
-                  <option key={batch} value={batch}>
-                    {batch}
-                  </option>
-                ))}
-              </select>
-            </FilterField>
-
-            {showYearSemesterFilters ? (
-              <>
-                <FilterField label="Year">
-                  <select
-                    className={selectClassName}
-                    value={filters.year === "all" ? "all" : String(filters.year)}
-                    disabled={loading || !masters}
-                    onChange={(e) =>
-                      setFilters({
-                        year: e.target.value === "all" ? "all" : Number(e.target.value),
-                        semester: "all",
-                      })
-                    }
-                  >
-                    <option value="all">All Years</option>
-                    {yearOptionsForCourse.map((year) => (
-                      <option key={year} value={year}>
-                        Year {year}
-                      </option>
-                    ))}
-                  </select>
-                </FilterField>
-
-                <FilterField label="Semester">
-                  <select
-                    className={selectClassName}
-                    value={filters.semester === "all" ? "all" : String(filters.semester)}
-                    disabled={loading || !masters}
-                    onChange={(e) =>
-                      setFilters({
-                        semester: e.target.value === "all" ? "all" : Number(e.target.value),
-                      })
-                    }
-                  >
-                    <option value="all">All Semesters</option>
-                    {semesterOptionsForCourse.map((semester) => (
-                      <option key={semester} value={semester}>
-                        Semester {semester}
-                      </option>
-                    ))}
-                  </select>
-                </FilterField>
-              </>
-            ) : null}
-
-            {showSectionFilter ? (
-              <FilterField label="Section">
+              <FilterField label="Academic Year">
                 <select
                   className={selectClassName}
-                  value={filters.section}
+                  value={filters.academicYear}
                   disabled={loading || !masters}
-                  onChange={(e) =>
-                    setFilters({
-                      section: e.target.value === "all" ? "all" : e.target.value,
-                    })
-                  }
+                  onChange={(e) => setFilters({ academicYear: e.target.value })}
                 >
-                  <option value="all">All Sections</option>
-                  {sectionsForBranch.map((section) => (
-                    <option key={section} value={section}>
-                      {section}
+                  {(masters?.academicYears ?? []).map((year) => (
+                    <option key={year.id} value={year.label}>
+                      {year.label}
                     </option>
                   ))}
                 </select>
               </FilterField>
-            ) : null}
 
-                <FilterField label="Student Status">
+              <FilterField label="College">
+                <select
+                  className={selectClassName}
+                  value={filters.collegeId === "all" ? "all" : String(filters.collegeId)}
+                  disabled={loading || !masters}
+                  onChange={(e) =>
+                    setFilters({
+                      collegeId: e.target.value === "all" ? "all" : Number(e.target.value),
+                    })
+                  }
+                >
+                  {showAllColleges ? <option value="all">All Colleges</option> : null}
+                  {(masters?.colleges ?? []).map((college) => (
+                    <option key={college.id} value={college.id}>
+                      {college.name}
+                    </option>
+                  ))}
+                </select>
+              </FilterField>
+
+              <FilterField label="Course">
+                <select
+                  className={selectClassName}
+                  value={filters.courseId === "all" ? "all" : String(filters.courseId)}
+                  disabled={loading || !masters}
+                  onChange={(e) =>
+                    setFilters({
+                      courseId: e.target.value === "all" ? "all" : Number(e.target.value),
+                      year: "all",
+                      semester: "all",
+                    })
+                  }
+                >
+                  <option value="all">All Courses</option>
+                  {coursesForCollege.map((course) => (
+                    <option key={course.id} value={course.id}>
+                      {course.name}
+                    </option>
+                  ))}
+                </select>
+              </FilterField>
+
+              <FilterField label="Branch">
+                <select
+                  className={selectClassName}
+                  value={filters.branchId === "all" ? "all" : String(filters.branchId)}
+                  disabled={loading || !masters}
+                  onChange={(e) =>
+                    setFilters({
+                      branchId: e.target.value === "all" ? "all" : Number(e.target.value),
+                    })
+                  }
+                >
+                  <option value="all">All Branches</option>
+                  {branchesForCourse.map((branch) => (
+                    <option key={branch.id} value={branch.id}>
+                      {branch.hasSections
+                        ? `${branch.name} (${branch.sectionCount} section${
+                            branch.sectionCount === 1 ? "" : "s"
+                          })`
+                        : `${branch.name} (no section)`}
+                    </option>
+                  ))}
+                </select>
+              </FilterField>
+            </div>
+
+            {/* ROW 2: Batch, Year, Semester, Section, Status & Reset */}
+            <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-end gap-2.5 w-full pt-0.5">
+              <FilterField label="Batch">
+                <select
+                  className={selectClassName}
+                  value={filters.batch === "all" ? "all" : filters.batch}
+                  disabled={loading || !masters || !selectedBranch}
+                  onChange={(e) => {
+                    const nextBatch = e.target.value === "all" ? "all" : e.target.value;
+                    setFilters({
+                      batch: nextBatch,
+                      ...(showSearch && nextBatch !== "all"
+                        ? { year: "all" as const, semester: "all" as const }
+                        : {}),
+                    });
+                  }}
+                >
+                  <option value="all">All Batches</option>
+                  {batchesForBranch.map((batch) => (
+                    <option key={batch} value={batch}>
+                      {batch}
+                    </option>
+                  ))}
+                </select>
+              </FilterField>
+
+              {showYearSemesterFilters ? (
+                <>
+                  <FilterField label="Year">
+                    <select
+                      className={selectClassName}
+                      value={filters.year === "all" ? "all" : String(filters.year)}
+                      disabled={loading || !masters}
+                      onChange={(e) =>
+                        setFilters({
+                          year: e.target.value === "all" ? "all" : Number(e.target.value),
+                          semester: "all",
+                        })
+                      }
+                    >
+                      <option value="all">All Years</option>
+                      {yearOptionsForCourse.map((year) => (
+                        <option key={year} value={year}>
+                          Year {year}
+                        </option>
+                      ))}
+                    </select>
+                  </FilterField>
+
+                  <FilterField label="Semester">
+                    <select
+                      className={selectClassName}
+                      value={filters.semester === "all" ? "all" : String(filters.semester)}
+                      disabled={loading || !masters}
+                      onChange={(e) =>
+                        setFilters({
+                          semester: e.target.value === "all" ? "all" : Number(e.target.value),
+                        })
+                      }
+                    >
+                      <option value="all">All Semesters</option>
+                      {semesterOptionsForCourse.map((semester) => (
+                        <option key={semester} value={semester}>
+                          Semester {semester}
+                        </option>
+                      ))}
+                    </select>
+                  </FilterField>
+                </>
+              ) : null}
+
+              {showSectionFilter ? (
+                <FilterField label="Section">
                   <select
                     className={selectClassName}
-                    value={filters.studentStatus === "all" ? "all" : filters.studentStatus}
+                    value={filters.section}
+                    disabled={loading || !masters}
                     onChange={(e) =>
                       setFilters({
-                        studentStatus: e.target.value === "all" ? "all" : e.target.value,
+                        section: e.target.value === "all" ? "all" : e.target.value,
                       })
                     }
                   >
-                    <option value="all">All Statuses</option>
-                    {studentStatuses.map((status) => (
-                      <option key={status} value={status}>
-                        {status}
+                    <option value="all">All Sections</option>
+                    {sectionsForBranch.map((section) => (
+                      <option key={section} value={section}>
+                        {section}
                       </option>
                     ))}
                   </select>
                 </FilterField>
-              </div>
-              
+              ) : null}
+
+              <FilterField label="Student Status">
+                <select
+                  className={selectClassName}
+                  value={filters.studentStatus === "all" ? "all" : filters.studentStatus}
+                  onChange={(e) =>
+                    setFilters({
+                      studentStatus: e.target.value === "all" ? "all" : e.target.value,
+                    })
+                  }
+                >
+                  <option value="all">All Statuses</option>
+                  {studentStatuses.map((status) => (
+                    <option key={status} value={status}>
+                      {status}
+                    </option>
+                  ))}
+                </select>
+              </FilterField>
+
               <Button
                 type="button"
                 size="sm"
                 variant="secondary"
                 onClick={resetFilters}
-                className="mb-0 h-11 sm:h-9 shrink-0 px-4 w-full sm:w-auto mt-2 sm:mt-0"
+                className="h-9 shrink-0 px-4 w-full sm:w-auto"
               >
                 Reset
               </Button>

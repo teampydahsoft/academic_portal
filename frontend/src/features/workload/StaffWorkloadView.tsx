@@ -6,6 +6,7 @@ import { PageHeader } from "@/components/ui/PageHeader";
 import { StatCard } from "@/components/ui/StatCard";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { Button } from "@/components/ui/Button";
+import { LoadingAnimation } from "@/components/ui/LoadingAnimation";
 import { apiFetch } from "@/lib/api";
 import {
   Printer,
@@ -342,7 +343,7 @@ export function StaffWorkloadView({ embedded = false }: { embedded?: boolean }) 
       </div>
 
       {error ? <p className="text-sm text-critical">{error}</p> : null}
-      {loading ? <p className="text-sm text-slate-500">Loading staff timetable & attendance records…</p> : null}
+      {loading ? <LoadingAnimation label="Loading staff timetable & attendance records…" /> : null}
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Total Faculty" value={kpis.totalFaculty} hint="In active scope" />
