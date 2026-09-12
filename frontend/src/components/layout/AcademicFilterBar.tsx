@@ -397,15 +397,21 @@ export function AcademicFilterBar({ title = "Filters" }: Props) {
               <FilterField label="Academic Year">
                 <select
                   className={selectClassName}
-                  value={filters.academicYear}
+                  value={filters.academicYear || "2026-2027"}
                   disabled={loading || !masters}
                   onChange={(e) => setFilters({ academicYear: e.target.value })}
                 >
-                  {(masters?.academicYears ?? []).map((year) => (
-                    <option key={year.id} value={year.label}>
-                      {year.label}
+                  {(masters?.academicYears ?? []).length === 0 ? (
+                    <option value={filters.academicYear || "2026-2027"}>
+                      {filters.academicYear || "2026-2027"}
                     </option>
-                  ))}
+                  ) : (
+                    (masters?.academicYears ?? []).map((year) => (
+                      <option key={year.id} value={year.label}>
+                        {year.label}
+                      </option>
+                    ))
+                  )}
                 </select>
               </FilterField>
 
@@ -421,11 +427,17 @@ export function AcademicFilterBar({ title = "Filters" }: Props) {
                   }
                 >
                   {showAllColleges ? <option value="all">All Colleges</option> : null}
-                  {(masters?.colleges ?? []).map((college) => (
-                    <option key={college.id} value={college.id}>
-                      {college.name}
+                  {(masters?.colleges ?? []).length === 0 && filters.collegeId !== "all" ? (
+                    <option value={String(filters.collegeId)}>
+                      {loading ? "Loading..." : "Assigned College"}
                     </option>
-                  ))}
+                  ) : (
+                    (masters?.colleges ?? []).map((college) => (
+                      <option key={college.id} value={college.id}>
+                        {college.name}
+                      </option>
+                    ))
+                  )}
                 </select>
               </FilterField>
 
@@ -618,15 +630,21 @@ export function AcademicFilterBar({ title = "Filters" }: Props) {
         <FilterField label="Academic Year">
           <select
             className={selectClassName}
-            value={filters.academicYear}
+            value={filters.academicYear || "2026-2027"}
             disabled={loading || !masters}
             onChange={(e) => setFilters({ academicYear: e.target.value })}
           >
-            {(masters?.academicYears ?? []).map((year) => (
-              <option key={year.id} value={year.label}>
-                {year.label}
+            {(masters?.academicYears ?? []).length === 0 ? (
+              <option value={filters.academicYear || "2026-2027"}>
+                {filters.academicYear || "2026-2027"}
               </option>
-            ))}
+            ) : (
+              (masters?.academicYears ?? []).map((year) => (
+                <option key={year.id} value={year.label}>
+                  {year.label}
+                </option>
+              ))
+            )}
           </select>
         </FilterField>
 
@@ -642,11 +660,17 @@ export function AcademicFilterBar({ title = "Filters" }: Props) {
             }
           >
             {showAllColleges ? <option value="all">All Colleges</option> : null}
-            {(masters?.colleges ?? []).map((college) => (
-              <option key={college.id} value={college.id}>
-                {college.name}
+            {(masters?.colleges ?? []).length === 0 && filters.collegeId !== "all" ? (
+              <option value={String(filters.collegeId)}>
+                {loading ? "Loading..." : "Assigned College"}
               </option>
-            ))}
+            ) : (
+              (masters?.colleges ?? []).map((college) => (
+                <option key={college.id} value={college.id}>
+                  {college.name}
+                </option>
+              ))
+            )}
           </select>
         </FilterField>
 

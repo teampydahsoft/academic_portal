@@ -27,7 +27,7 @@ function str(value: unknown) {
   return value;
 }
 
-catalogRouter.get("/masters", requirePermission("catalog.view"), async (_req, res, next) => {
+catalogRouter.get("/masters", async (_req, res, next) => {
   try {
     res.json(await getAcademicMasters());
   } catch (error) {
@@ -37,7 +37,13 @@ catalogRouter.get("/masters", requirePermission("catalog.view"), async (_req, re
 
 catalogRouter.get(
   "/batch-progress",
-  requirePermission("catalog.view"),
+  requirePermission(
+    "catalog.view",
+    "students.view",
+    "timetable.view",
+    "attendance.view",
+    "mentoring.view",
+  ),
   async (req: AuthedRequest, res, next) => {
     try {
       const collegeId = num(req.query.collegeId);

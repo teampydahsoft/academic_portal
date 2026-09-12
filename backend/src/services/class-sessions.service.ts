@@ -451,28 +451,92 @@ export async function getClassSessionById(sessionId: number) {
 
 export async function listPublishedPlanIds(filters: {
   collegeId?: number;
+  collegeIds?: number[];
   courseId?: number;
   branchId?: number;
+  branchIds?: number[];
   batch?: string;
   year?: number;
   semester?: number;
   section?: string;
   academicYear?: string;
+  facultyStaffLinkId?: number;
+  includeFacultyStaffLinkId?: number;
 }) {
   const where = ["status = 'published'"];
   const params: unknown[] = [];
-  if (filters.collegeId) {
-    where.push("college_id = ?");
-    params.push(filters.collegeId);
+
+  if (filters.facultyStaffLinkId != null) {
+    where.push(
+      "id IN (SELECT DISTINCT plan_id FROM ap_timetable_entries WHERE faculty_staff_link_id = ?)",
+    );
+    params.push(filters.facultyStaffLinkId);
+  } else if (filters.includeFacultyStaffLinkId != null) {
+    const scopeClauses: string[] = [];
+    const scopeParams: unknown[] = [];
+
+    if (filters.collegeId) {
+      scopeClauses.push("college_id = ?");
+      scopeParams.push(filters.collegeId);
+    } else if (filters.collegeIds?.length) {
+      scopeClauses.push(
+        `college_id IN (${filters.collegeIds.map(() => "?").join(",")})`,
+      );
+      scopeParams.push(...filters.collegeIds);
+    }
+
+    if (filters.courseId) {
+      scopeClauses.push("course_id = ?");
+      scopeParams.push(filters.courseId);
+    }
+
+    if (filters.branchId) {
+      scopeClauses.push("branch_id = ?");
+      scopeParams.push(filters.branchId);
+    } else if (filters.branchIds?.length) {
+      scopeClauses.push(
+        `branch_id IN (${filters.branchIds.map(() => "?").join(",")})`,
+      );
+      scopeParams.push(...filters.branchIds);
+    }
+
+    if (scopeClauses.length > 0) {
+      where.push(`(
+        (${scopeClauses.join(" AND ")})
+        OR id IN (SELECT DISTINCT plan_id FROM ap_timetable_entries WHERE faculty_staff_link_id = ?)
+      )`);
+      params.push(...scopeParams, filters.includeFacultyStaffLinkId);
+    } else {
+      where.push(
+        "id IN (SELECT DISTINCT plan_id FROM ap_timetable_entries WHERE faculty_staff_link_id = ?)",
+      );
+      params.push(filters.includeFacultyStaffLinkId);
+    }
+  } else {
+    if (filters.collegeId) {
+      where.push("college_id = ?");
+      params.push(filters.collegeId);
+    } else if (filters.collegeIds?.length) {
+      where.push(
+        `college_id IN (${filters.collegeIds.map(() => "?").join(",")})`,
+      );
+      params.push(...filters.collegeIds);
+    }
+    if (filters.courseId) {
+      where.push("course_id = ?");
+      params.push(filters.courseId);
+    }
+    if (filters.branchId) {
+      where.push("branch_id = ?");
+      params.push(filters.branchId);
+    } else if (filters.branchIds?.length) {
+      where.push(
+        `branch_id IN (${filters.branchIds.map(() => "?").join(",")})`,
+      );
+      params.push(...filters.branchIds);
+    }
   }
-  if (filters.courseId) {
-    where.push("course_id = ?");
-    params.push(filters.courseId);
-  }
-  if (filters.branchId) {
-    where.push("branch_id = ?");
-    params.push(filters.branchId);
-  }
+
   if (filters.batch) {
     where.push("batch = ?");
     params.push(filters.batch);

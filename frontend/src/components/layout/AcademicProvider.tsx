@@ -178,12 +178,21 @@ export function AcademicProvider({ children }: { children: React.ReactNode }) {
           semesterOptions: data.semesterOptions ?? [1, 2],
         });
         setFiltersState((prev) => {
-          const academicYear =
+          const defaultYear =
             data.defaults?.academicYear ||
             data.academicYears.find((y) => y.isActive)?.label ||
-            prev.academicYear ||
             data.academicYears[0]?.label ||
             "";
+
+          // If the stored/previous academic year is empty, invalid, or an old bugged value (e.g. 2002-2003, 2001-2002),
+          // or is not found in the valid academic years list, use the current academic year default.
+          const isInvalidPrevYear =
+            !prev.academicYear ||
+            prev.academicYear === "2002-2003" ||
+            prev.academicYear === "2001-2002" ||
+            !data.academicYears.some((y) => y.label === prev.academicYear);
+
+          const academicYear = isInvalidPrevYear ? defaultYear : prev.academicYear;
 
           let collegeId = prev.collegeId;
           if (!authorization?.scope?.isGlobal && scopedColleges.length === 1) {
@@ -195,7 +204,15 @@ export function AcademicProvider({ children }: { children: React.ReactNode }) {
             collegeId = scopedColleges.length === 1 ? scopedColleges[0]!.id : "all";
           }
 
-          return { ...prev, academicYear, collegeId };
+          let branchId = prev.branchId;
+          if (
+            branchId !== "all" &&
+            !scopedBranches.some((branch) => branch.id === branchId)
+          ) {
+            branchId = "all";
+          }
+
+          return { ...prev, academicYear, collegeId, branchId };
         });
       } catch {
         if (!cancelled) setMasters(null);
@@ -241,11 +258,22 @@ export function AcademicProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const resetFilters = useCallback(() => {
-    setFiltersState((prev) => ({
-      ...defaultFilters,
-      academicYear: prev.academicYear,
-    }));
-  }, []);
+    setFiltersState((_prev) => {
+      const defaultYear =
+        masters?.defaults?.academicYear ||
+        masters?.academicYears.find((y) => y.isActive)?.label ||
+        "2026-2027";
+      let collegeId: number | "all" = "all";
+      if (!authorization?.scope?.isGlobal && masters?.colleges.length === 1) {
+        collegeId = masters.colleges[0]!.id;
+      }
+      return {
+        ...defaultFilters,
+        academicYear: defaultYear,
+        collegeId,
+      };
+    });
+  }, [masters, authorization]);
 
   const value = useMemo(
     () => ({

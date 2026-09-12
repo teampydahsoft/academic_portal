@@ -127,6 +127,18 @@ function buildCourseYearOptions(
   return years;
 }
 
+export function parseStartYear(label: string): number {
+  const match = String(label ?? "").match(/^(\d{4})/);
+  return match ? parseInt(match[1], 10) : 0;
+}
+
+export function getCurrentAcademicYearLabel(now = new Date()): string {
+  const currentYear = now.getFullYear();
+  // Academic sessions start around June in India (month 5+).
+  const startYear = now.getMonth() >= 5 ? currentYear : currentYear - 1;
+  return `${startYear}-${startYear + 1}`;
+}
+
 export async function getAcademicMasters() {
   const [
     colleges,
@@ -207,9 +219,26 @@ export async function getAcademicMasters() {
     assignedMap.set(`${row.branch_id}::${row.section_name}`, Number(row.student_count));
   }
 
+  const sortedYears = [...years].sort((a, b) => {
+    const aStart = parseStartYear(a.year_label);
+    const bStart = parseStartYear(b.year_label);
+    if (aStart !== bStart) return bStart - aStart;
+    return b.id - a.id;
+  });
+
+  const currentCalYear = getCurrentAcademicYearLabel();
+  const currentMatch =
+    sortedYears.find((y) => y.year_label === currentCalYear && Number(y.is_active) === 1) ||
+    sortedYears.find((y) => y.year_label === currentCalYear);
+
   const activeYear =
-    years.find((y) => Number(y.is_active) === 1)?.year_label ??
-    years[0]?.year_label ??
+    currentMatch?.year_label ??
+    sortedYears.find(
+      (y) =>
+        Number(y.is_active) === 1 && parseStartYear(y.year_label) <= new Date().getFullYear(),
+    )?.year_label ??
+    sortedYears.find((y) => Number(y.is_active) === 1)?.year_label ??
+    sortedYears[0]?.year_label ??
     "—";
 
   const sections: Array<{
@@ -278,7 +307,7 @@ export async function getAcademicMasters() {
   });
 
   return {
-    academicYears: years.map((y) => ({
+    academicYears: sortedYears.map((y) => ({
       id: y.id,
       label: y.year_label,
       isActive: Number(y.is_active) === 1,

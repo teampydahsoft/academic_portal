@@ -138,6 +138,7 @@ const ROLE_PERMISSIONS_BASE: Record<RoleKey, Permission[]> = {
     "timetable.view",
     "attendance.view",
     "attendance_analytics.view",
+    "attendance.post",
     "attendance_calendar.view",
     "workload.view",
     "examinations.view",
@@ -201,12 +202,14 @@ const ROLE_PERMISSIONS_BASE: Record<RoleKey, Permission[]> = {
     ...MENTORING_FULL,
   ],
 
-  /** Teaching staff — personal dashboard, own timetable, own attendance, requests. */
+  /** Teaching staff — personal dashboard, own timetable, own attendance, requests, catalog metadata. */
   staff: [
     "dashboard.view",
     "my_timetable.view",
     "attendance.view",
+    "attendance_analytics.view",
     "attendance.post",
+    "catalog.view",
     "request.view",
     "request.create",
     ...MENTORING_MENTOR,

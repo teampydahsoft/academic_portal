@@ -92,7 +92,7 @@ export const NAV_GROUPS: NavGroup[] = [
         label: "Attendance Analytics",
         href: "/attendance-analytics",
         icon: LineChart,
-        permissions: ["attendance_analytics.view"],
+        permissions: ["attendance_analytics.view", "attendance.view"],
       },
     ],
   },
@@ -228,7 +228,10 @@ export const TEACHING_STAFF_NAV_HREFS = new Set([
 ]);
 
 /** Sidebar routes hidden for global super admin (institute oversight only). */
-export const SUPER_ADMIN_HIDDEN_NAV_HREFS = new Set(["/my-timetable"]);
+export const SUPER_ADMIN_HIDDEN_NAV_HREFS = new Set([
+  "/my-timetable",
+  "/attendance-posting",
+]);
 
 /** Resolve the most specific nav item for a pathname (longest href wins). */
 export function navItemForPath(pathname: string): NavItem | null {

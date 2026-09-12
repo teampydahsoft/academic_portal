@@ -43,7 +43,7 @@ function requiredPermissionsForPath(pathname: string): string[] | null {
     return ["my_timetable.view"];
   }
   if (pathname.startsWith("/attendance-analytics")) {
-    return ["attendance_analytics.view"];
+    return ["attendance_analytics.view", "attendance.view"];
   }
 
   return bestMatch?.permissions ?? null;

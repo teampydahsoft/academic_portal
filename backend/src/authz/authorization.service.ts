@@ -269,6 +269,39 @@ export async function loadAuthzContext(userId: number): Promise<AuthzContext> {
 
   const scope = buildScopeFromAssignments(roles);
 
+  if (!scope.isGlobal) {
+    const teachingRows = await queryAcademic<{ college_id: number | null; branch_id: number | null }[]>(
+      `SELECT DISTINCT college_id, branch_id
+       FROM (
+         SELECT p.college_id, p.branch_id
+         FROM ap_timetable_entries te
+         JOIN ap_timetable_plans p ON p.id = te.plan_id
+         JOIN ap_staff_link sl ON sl.id = te.faculty_staff_link_id
+         JOIN ap_users u ON u.hrms_employee_id = sl.hrms_employee_id
+         WHERE u.id = ? AND p.branch_id IS NOT NULL
+         UNION
+         SELECT cs.college_id, cs.branch_id
+         FROM ap_class_sessions cs
+         JOIN ap_staff_link sl ON sl.id = cs.faculty_staff_link_id
+         JOIN ap_users u ON u.hrms_employee_id = sl.hrms_employee_id
+         WHERE u.id = ? AND cs.branch_id IS NOT NULL
+       ) teaching`,
+      [userId, userId],
+    );
+
+    if (teachingRows.length > 0) {
+      const extraColleges = teachingRows.map((r) => Number(r.college_id)).filter(Boolean);
+      const extraBranches = teachingRows.map((r) => Number(r.branch_id)).filter(Boolean);
+
+      if (scope.collegeIds !== null) {
+        scope.collegeIds = uniqueNumbers([...scope.collegeIds, ...extraColleges]);
+      }
+      if (scope.branchIds !== null) {
+        scope.branchIds = uniqueNumbers([...scope.branchIds, ...extraBranches]);
+      }
+    }
+  }
+
   return {
     userId,
     roles,

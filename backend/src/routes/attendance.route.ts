@@ -7,7 +7,11 @@ import {
   scopedFilters,
   statusFromAuthzError,
 } from "../authz/require-permission.js";
-import { ownTeachingStaffLinkId } from "../authz/faculty-self-scope.js";
+import {
+  ownTeachingStaffLinkId,
+  resolveStaffLinkIdForUser,
+  shouldRestrictToOwnTeachingLoad,
+} from "../authz/faculty-self-scope.js";
 import {
   getAttendanceAnalytics,
   getAttendanceSession,
@@ -59,8 +63,20 @@ attendanceRouter.get(
   async (req: AuthedRequest, res, next) => {
     try {
       const scoped = scopedQuery(req);
-      const facultyStaffLinkId = await facultyFilter(req);
-      const isStaff = facultyStaffLinkId != null;
+      const authz = getAuthz(req);
+      const userStaffLinkId = await resolveStaffLinkIdForUser(authz.userId);
+      const isStaffOnly = shouldRestrictToOwnTeachingLoad(authz);
+
+      const scopeParam = str(req.query.scope);
+      const isMineScope =
+        isStaffOnly ||
+        scopeParam === "mine" ||
+        req.query.mine === "true" ||
+        req.query.mine === "1";
+
+      const facultyStaffLinkId = isMineScope ? (userStaffLinkId ?? -1) : undefined;
+      const includeFacultyStaffLinkId =
+        !isMineScope && userStaffLinkId != null ? userStaffLinkId : undefined;
       const generate =
         req.query.generate === "false" || req.query.generate === "0" ? false : true;
       res.json(
@@ -68,18 +84,20 @@ attendanceRouter.get(
           date: str(req.query.date),
           startDate: str(req.query.startDate),
           endDate: str(req.query.endDate),
-          collegeId: isStaff ? undefined : scoped.collegeId,
-          collegeIds: isStaff ? undefined : scoped.collegeIds,
-          courseId: isStaff ? undefined : num(req.query.courseId),
-          branchId: isStaff ? undefined : scoped.branchId,
-          branchIds: isStaff ? undefined : scoped.branchIds,
-          batch: isStaff ? undefined : str(req.query.batch),
-          year: isStaff ? undefined : num(req.query.year),
-          semester: isStaff ? undefined : num(req.query.semester),
-          section: isStaff ? undefined : str(req.query.section),
-          academicYear: isStaff ? undefined : str(req.query.academicYear),
+          collegeId: isMineScope ? undefined : scoped.collegeId,
+          collegeIds: isMineScope ? undefined : scoped.collegeIds,
+          courseId: isMineScope ? undefined : num(req.query.courseId),
+          branchId: isMineScope ? undefined : scoped.branchId,
+          branchIds: isMineScope ? undefined : scoped.branchIds,
+          batch: isMineScope ? undefined : str(req.query.batch),
+          year: isMineScope ? undefined : num(req.query.year),
+          semester: isMineScope ? undefined : num(req.query.semester),
+          section: isMineScope ? undefined : str(req.query.section),
+          academicYear: isMineScope ? undefined : str(req.query.academicYear),
           generate,
           ...(facultyStaffLinkId != null ? { facultyStaffLinkId } : {}),
+          ...(includeFacultyStaffLinkId != null ? { includeFacultyStaffLinkId } : {}),
+          currentStaffLinkId: userStaffLinkId,
         }),
       );
     } catch (error) {
@@ -127,7 +145,7 @@ attendanceRouter.get(
 
 attendanceRouter.get(
   "/analytics",
-  requirePermission("attendance_analytics.view"),
+  requirePermission("attendance_analytics.view", "attendance.view"),
   async (req: AuthedRequest, res, next) => {
     try {
       const scoped = scopedQuery(req);
@@ -158,21 +176,19 @@ attendanceRouter.get(
   async (req: AuthedRequest, res, next) => {
     try {
       const scoped = scopedQuery(req);
-      const facultyStaffLinkId = await facultyFilter(req);
-      const isStaff = facultyStaffLinkId != null;
       res.json(
         await getDailyAttendanceAnalytics({
           date: str(req.query.date),
-          collegeId: isStaff ? undefined : scoped.collegeId,
-          collegeIds: isStaff ? undefined : scoped.collegeIds,
-          courseId: isStaff ? undefined : num(req.query.courseId),
-          branchId: isStaff ? undefined : scoped.branchId,
-          branchIds: isStaff ? undefined : scoped.branchIds,
-          batch: isStaff ? undefined : str(req.query.batch),
-          year: isStaff ? undefined : num(req.query.year),
-          semester: isStaff ? undefined : num(req.query.semester),
-          section: isStaff ? undefined : str(req.query.section),
-          academicYear: isStaff ? undefined : str(req.query.academicYear),
+          collegeId: scoped.collegeId,
+          collegeIds: scoped.collegeIds,
+          courseId: num(req.query.courseId),
+          branchId: scoped.branchId,
+          branchIds: scoped.branchIds,
+          batch: str(req.query.batch),
+          year: num(req.query.year),
+          semester: num(req.query.semester),
+          section: str(req.query.section),
+          academicYear: str(req.query.academicYear),
         }),
       );
     } catch (error) {
@@ -192,22 +208,20 @@ attendanceRouter.get(
   async (req: AuthedRequest, res, next) => {
     try {
       const scoped = scopedQuery(req);
-      const facultyStaffLinkId = await facultyFilter(req);
-      const isStaff = facultyStaffLinkId != null;
       res.json(
         await getWeeklyAttendanceAnalytics({
           date: str(req.query.date),
           startDate: str(req.query.startDate),
-          collegeId: isStaff ? undefined : scoped.collegeId,
-          collegeIds: isStaff ? undefined : scoped.collegeIds,
-          courseId: isStaff ? undefined : num(req.query.courseId),
-          branchId: isStaff ? undefined : scoped.branchId,
-          branchIds: isStaff ? undefined : scoped.branchIds,
-          batch: isStaff ? undefined : str(req.query.batch),
-          year: isStaff ? undefined : num(req.query.year),
-          semester: isStaff ? undefined : num(req.query.semester),
-          section: isStaff ? undefined : str(req.query.section),
-          academicYear: isStaff ? undefined : str(req.query.academicYear),
+          collegeId: scoped.collegeId,
+          collegeIds: scoped.collegeIds,
+          courseId: num(req.query.courseId),
+          branchId: scoped.branchId,
+          branchIds: scoped.branchIds,
+          batch: str(req.query.batch),
+          year: num(req.query.year),
+          semester: num(req.query.semester),
+          section: str(req.query.section),
+          academicYear: str(req.query.academicYear),
         }),
       );
     } catch (error) {
@@ -227,22 +241,20 @@ attendanceRouter.get(
   async (req: AuthedRequest, res, next) => {
     try {
       const scoped = scopedQuery(req);
-      const facultyStaffLinkId = await facultyFilter(req);
-      const isStaff = facultyStaffLinkId != null;
       res.json(
         await getMonthlyAttendanceAnalytics({
           month: num(req.query.month),
           year: num(req.query.year),
-          collegeId: isStaff ? undefined : scoped.collegeId,
-          collegeIds: isStaff ? undefined : scoped.collegeIds,
-          courseId: isStaff ? undefined : num(req.query.courseId),
-          branchId: isStaff ? undefined : scoped.branchId,
-          branchIds: isStaff ? undefined : scoped.branchIds,
-          batch: isStaff ? undefined : str(req.query.batch),
-          yearOfStudy: isStaff ? undefined : num(req.query.year),
-          semester: isStaff ? undefined : num(req.query.semester),
-          section: isStaff ? undefined : str(req.query.section),
-          academicYear: isStaff ? undefined : str(req.query.academicYear),
+          collegeId: scoped.collegeId,
+          collegeIds: scoped.collegeIds,
+          courseId: num(req.query.courseId),
+          branchId: scoped.branchId,
+          branchIds: scoped.branchIds,
+          batch: str(req.query.batch),
+          yearOfStudy: num(req.query.year),
+          semester: num(req.query.semester),
+          section: str(req.query.section),
+          academicYear: str(req.query.academicYear),
         }),
       );
     } catch (error) {
@@ -262,20 +274,18 @@ attendanceRouter.get(
   async (req: AuthedRequest, res, next) => {
     try {
       const scoped = scopedQuery(req);
-      const facultyStaffLinkId = await facultyFilter(req);
-      const isStaff = facultyStaffLinkId != null;
       res.json(
         await getSemesterAttendanceAnalytics({
           semester: num(req.query.semester),
           academicYear: str(req.query.academicYear),
-          collegeId: isStaff ? undefined : scoped.collegeId,
-          collegeIds: isStaff ? undefined : scoped.collegeIds,
-          courseId: isStaff ? undefined : num(req.query.courseId),
-          branchId: isStaff ? undefined : scoped.branchId,
-          branchIds: isStaff ? undefined : scoped.branchIds,
-          batch: isStaff ? undefined : str(req.query.batch),
-          yearOfStudy: isStaff ? undefined : num(req.query.year),
-          section: isStaff ? undefined : str(req.query.section),
+          collegeId: scoped.collegeId,
+          collegeIds: scoped.collegeIds,
+          courseId: num(req.query.courseId),
+          branchId: scoped.branchId,
+          branchIds: scoped.branchIds,
+          batch: str(req.query.batch),
+          yearOfStudy: num(req.query.year),
+          section: str(req.query.section),
         }),
       );
     } catch (error) {
@@ -304,12 +314,18 @@ attendanceRouter.get(
         res.status(404).json({ message: "Class session not found" });
         return;
       }
-      ensureEntityScope(req, {
-        collegeId: meta.collegeId,
-        branchId: meta.branchId,
-      });
+      const userStaffLinkId = await resolveStaffLinkIdForUser(req.authUser!.id);
+      const isOwnClass =
+        userStaffLinkId != null && Number(meta.facultyStaffLinkId) === userStaffLinkId;
+      if (!isOwnClass) {
+        ensureEntityScope(req, {
+          collegeId: meta.collegeId,
+          branchId: meta.branchId,
+        });
+      }
       const facultyStaffLinkId = await facultyFilter(req);
       if (
+        !isOwnClass &&
         facultyStaffLinkId != null &&
         Number(meta.facultyStaffLinkId) !== facultyStaffLinkId
       ) {
@@ -328,11 +344,22 @@ attendanceRouter.get(
   },
 );
 
-attendanceRouter.post(
+  attendanceRouter.post(
   "/sessions/:sessionId",
   requirePermission("attendance.post"),
   async (req: AuthedRequest, res, next) => {
     try {
+      const authz = getAuthz(req);
+      const isSuperAdminOnly =
+        authz.roles.some((r) => r.roleKey === "super_admin") &&
+        !authz.roles.some((r) => r.roleKey !== "super_admin");
+      if (isSuperAdminOnly) {
+        res.status(403).json({
+          message:
+            "Super administrators have oversight access only. Attendance must be marked and submitted by assigned faculty or academic leadership (HOD, Vice Principal, Principal).",
+        });
+        return;
+      }
       const sessionId = Number(req.params.sessionId);
       if (!Number.isFinite(sessionId)) {
         res.status(400).json({ message: "Invalid class session id" });
@@ -343,10 +370,15 @@ attendanceRouter.post(
         res.status(404).json({ message: "Class session not found" });
         return;
       }
-      ensureEntityScope(req, {
-        collegeId: meta.collegeId,
-        branchId: meta.branchId,
-      });
+      const userStaffLinkId = await resolveStaffLinkIdForUser(req.authUser!.id);
+      const isOwnClass =
+        userStaffLinkId != null && Number(meta.facultyStaffLinkId) === userStaffLinkId;
+      if (!isOwnClass) {
+        ensureEntityScope(req, {
+          collegeId: meta.collegeId,
+          branchId: meta.branchId,
+        });
+      }
       const facultyStaffLinkId = await facultyFilter(req);
       const body = req.body as {
         students?: Array<{
@@ -362,7 +394,7 @@ attendanceRouter.post(
         students: body.students ?? [],
         editReason: body.editReason,
         postedByUserId: req.authUser!.id,
-        requiredFacultyStaffLinkId: facultyStaffLinkId ?? undefined,
+        requiredFacultyStaffLinkId: !isOwnClass ? (facultyStaffLinkId ?? undefined) : undefined,
       });
       await writeAuditLog({
         actorUserId: req.authUser!.id,

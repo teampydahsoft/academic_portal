@@ -99,6 +99,8 @@ export type AttendanceListFilters = {
   academicYear?: string;
   generate?: boolean;
   facultyStaffLinkId?: number;
+  includeFacultyStaffLinkId?: number;
+  currentStaffLinkId?: number | null;
 };
 
 function holidayScopeFromRow(row: {
@@ -131,8 +133,16 @@ async function ensurePosterUserId() {
   return Number(inserted.insertId);
 }
 
-function mapSessionCard(row: SessionListRow, holiday: boolean) {
+function mapSessionCard(
+  row: SessionListRow,
+  holiday: boolean,
+  currentStaffLinkId?: number | null,
+) {
   const posted = row.post_id != null;
+  const isMySession =
+    currentStaffLinkId != null &&
+    row.faculty_staff_link_id != null &&
+    Number(row.faculty_staff_link_id) === Number(currentStaffLinkId);
   return {
     id: Number(row.id),
     planId: Number(row.plan_id),
@@ -158,6 +168,7 @@ function mapSessionCard(row: SessionListRow, holiday: boolean) {
     sessionStatus: holiday ? "holiday" : posted ? "posted" : row.status,
     posted,
     holiday,
+    isMySession,
     presentCount: Number(row.present_count ?? 0),
     absentCount: Number(row.absent_count ?? 0),
     odCount: Number(row.od_count ?? 0),
@@ -183,13 +194,17 @@ export async function listAttendanceSessions(filters: AttendanceListFilters) {
   if (filters.generate !== false && !filters.startDate) {
     generated = await ensureSessionsForDate(date, {
       collegeId: filters.collegeId,
+      collegeIds: filters.collegeIds,
       courseId: filters.courseId,
       branchId: filters.branchId,
+      branchIds: filters.branchIds,
       batch: filters.batch,
       year: filters.year,
       semester: filters.semester,
       section: filters.section,
       academicYear: filters.academicYear,
+      facultyStaffLinkId: filters.facultyStaffLinkId,
+      includeFacultyStaffLinkId: filters.includeFacultyStaffLinkId,
     });
   }
 
@@ -207,47 +222,56 @@ export async function listAttendanceSessions(filters: AttendanceListFilters) {
     params.push(date);
   }
 
-  if (filters.collegeId) {
-    where.push("cs.college_id = ?");
-    params.push(filters.collegeId);
-  } else if (filters.collegeIds?.length) {
-    where.push(`cs.college_id IN (${filters.collegeIds.map(() => "?").join(",")})`);
-    params.push(...filters.collegeIds);
-  }
-  if (filters.courseId) {
-    where.push("p.course_id = ?");
-    params.push(filters.courseId);
-  }
-  if (filters.branchId) {
-    where.push("cs.branch_id = ?");
-    params.push(filters.branchId);
-  } else if (filters.branchIds?.length) {
-    where.push(`cs.branch_id IN (${filters.branchIds.map(() => "?").join(",")})`);
-    params.push(...filters.branchIds);
-  }
-  if (filters.batch) {
-    where.push("p.batch = ?");
-    params.push(filters.batch);
-  }
-  if (filters.year != null) {
-    where.push("p.year_of_study = ?");
-    params.push(filters.year);
-  }
-  if (filters.semester != null) {
-    where.push("p.semester_number = ?");
-    params.push(filters.semester);
-  }
-  if (filters.section) {
-    where.push("cs.section_name = ?");
-    params.push(filters.section);
-  }
-  if (filters.academicYear) {
-    where.push("p.academic_year_label = ?");
-    params.push(filters.academicYear);
-  }
   if (filters.facultyStaffLinkId != null) {
     where.push("cs.faculty_staff_link_id = ?");
     params.push(filters.facultyStaffLinkId);
+  } else if (filters.includeFacultyStaffLinkId != null) {
+    const scopeClauses: string[] = [];
+    const scopeParams: unknown[] = [];
+
+    if (filters.collegeId) {
+      scopeClauses.push("cs.college_id = ?");
+      scopeParams.push(filters.collegeId);
+    } else if (filters.collegeIds?.length) {
+      scopeClauses.push(`cs.college_id IN (${filters.collegeIds.map(() => "?").join(",")})`);
+      scopeParams.push(...filters.collegeIds);
+    }
+
+    if (filters.branchId) {
+      scopeClauses.push("cs.branch_id = ?");
+      scopeParams.push(filters.branchId);
+    } else if (filters.branchIds?.length) {
+      scopeClauses.push(`cs.branch_id IN (${filters.branchIds.map(() => "?").join(",")})`);
+      scopeParams.push(...filters.branchIds);
+    }
+
+    if (scopeClauses.length > 0) {
+      where.push(`((${scopeClauses.join(" AND ")}) OR cs.faculty_staff_link_id = ?)`);
+      params.push(...scopeParams, filters.includeFacultyStaffLinkId);
+    } else {
+      where.push("cs.faculty_staff_link_id = ?");
+      params.push(filters.includeFacultyStaffLinkId);
+    }
+  } else {
+    if (filters.collegeId) {
+      where.push("cs.college_id = ?");
+      params.push(filters.collegeId);
+    } else if (filters.collegeIds?.length) {
+      where.push(`cs.college_id IN (${filters.collegeIds.map(() => "?").join(",")})`);
+      params.push(...filters.collegeIds);
+    }
+    if (filters.branchId) {
+      where.push("cs.branch_id = ?");
+      params.push(filters.branchId);
+    } else if (filters.branchIds?.length) {
+      where.push(`cs.branch_id IN (${filters.branchIds.map(() => "?").join(",")})`);
+      params.push(...filters.branchIds);
+    }
+  }
+
+  if (filters.courseId) {
+    where.push("p.course_id = ?");
+    params.push(filters.courseId);
   }
 
   const rows = await queryAcademic<SessionListRow[]>(
@@ -322,12 +346,16 @@ export async function listAttendanceSessions(filters: AttendanceListFilters) {
   const branchMap = new Map(branches.map((b) => [b.id, b.name]));
 
   const holidays = await listCustomHolidays({ startDate: date, endDate: date });
+  const currentStaffLinkId =
+    filters.currentStaffLinkId !== undefined
+      ? filters.currentStaffLinkId
+      : filters.facultyStaffLinkId ?? filters.includeFacultyStaffLinkId;
   const sessions = rows
     .map((row) => {
       const holiday = holidays.some((item) =>
         holidayAppliesToScope(item, holidayScopeFromRow(row)),
       );
-      const card = mapSessionCard(row, holiday);
+      const card = mapSessionCard(row, holiday, currentStaffLinkId);
       return {
         ...card,
         collegeName: collegeMap.get(Number(row.college_id)) ?? `College #${row.college_id}`,
@@ -434,6 +462,8 @@ export async function listAttendanceSessions(filters: AttendanceListFilters) {
     generated,
     scheduled: sessions.filter((s) => !s.posted).length,
     posted: sessions.filter((s) => s.posted).length,
+    mySessionsCount: sessions.filter((s) => s.isMySession).length,
+    currentStaffLinkId: currentStaffLinkId ?? null,
     abstract,
     data: sessions,
   };
