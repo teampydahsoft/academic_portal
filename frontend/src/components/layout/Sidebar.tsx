@@ -1,16 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import {
+  ChevronDown,
+  ChevronRight,
   LogOut,
   PanelLeftClose,
   PanelLeftOpen,
   UserRound,
   X,
 } from "lucide-react";
-import { NAV_GROUPS, filterNavGroups, navItemForPath, navLabelForItem } from "@/lib/navigation";
+import { NAV_GROUPS, filterNavGroups, navLabelForItem } from "@/lib/navigation";
 import { cn } from "@/lib/cn";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { isTeachingStaffOnly, isSuperAdminUser } from "@/lib/teaching-scope";
@@ -26,9 +28,11 @@ type Props = {
 
 export function Sidebar({ open, collapsed, onClose, onToggleCollapsed }: Props) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const { user, authorization, logout, refresh, hasAnyPermission, hasPermission } =
     useAuth();
   const [profileOpen, setProfileOpen] = useState(false);
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
 
   const teachingStaffOnly = isTeachingStaffOnly(authorization);
   const superAdminUser = isSuperAdminUser(authorization);
@@ -41,6 +45,64 @@ export function Sidebar({ open, collapsed, onClose, onToggleCollapsed }: Props) 
       }),
     [hasAnyPermission, teachingStaffOnly, superAdminUser],
   );
+
+  const isItemActive = (href: string) => {
+    const [itemPath, itemQuery] = href.split("?");
+
+    if (itemQuery) {
+      if (pathname !== itemPath) return false;
+      const itemParams = new URLSearchParams(itemQuery);
+      let matched = true;
+      itemParams.forEach((val, key) => {
+        const currentVal = searchParams.get(key);
+        if (currentVal !== val) {
+          if (
+            pathname === "/reports" &&
+            key === "tab" &&
+            val === "department-timetables" &&
+            !currentVal
+          ) {
+            return;
+          }
+          matched = false;
+        }
+      });
+      return matched;
+    }
+
+    if (pathname === itemPath) return true;
+
+    if (pathname.startsWith(`${itemPath}/`)) {
+      const hasExactOtherMatch = groups.some((g) =>
+        g.items.some((i) => i.href.split("?")[0] === pathname),
+      );
+      return !hasExactOtherMatch;
+    }
+
+    return false;
+  };
+
+  // Auto-expand group containing the active page on load & navigation
+  useEffect(() => {
+    const parentGroup = groups.find((g) =>
+      g.items.some((item) => isItemActive(item.href)),
+    );
+    if (parentGroup) {
+      setExpandedGroups({
+        [parentGroup.title]: true,
+      });
+    }
+  }, [pathname, searchParams, groups]);
+
+  const toggleGroup = (title: string) => {
+    setExpandedGroups((prev) => {
+      const isOpen = Boolean(prev[title]);
+      if (isOpen) {
+        return {};
+      }
+      return { [title]: true };
+    });
+  };
 
   const roleLabel = useMemo(() => {
     const roles = authorization?.roles ?? [];
@@ -68,7 +130,7 @@ export function Sidebar({ open, collapsed, onClose, onToggleCollapsed }: Props) 
       <aside
         className={cn(
           "fixed inset-y-0 left-0 z-50 flex h-dvh max-h-dvh flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-[width,transform] duration-200 lg:static lg:h-full lg:max-h-none lg:translate-x-0",
-          collapsed ? "w-[72px]" : "w-[220px]",
+          collapsed ? "w-[72px]" : "w-[240px]",
           open ? "translate-x-0" : "-translate-x-full lg:translate-x-0",
         )}
       >
@@ -86,17 +148,17 @@ export function Sidebar({ open, collapsed, onClose, onToggleCollapsed }: Props) 
           />
           {!collapsed ? (
             <div className="min-w-0 flex-1">
-              <p className="truncate text-[11px] font-medium uppercase tracking-[0.12em] text-brand-600">
+              <p className="truncate text-[11px] font-medium uppercase tracking-[0.12em] text-brand-500">
                 Pydah Group
               </p>
-              <h1 className="truncate text-sm font-semibold text-sidebar-foreground">
+              <h1 className="truncate text-sm font-semibold text-white">
                 Academic Portal
               </h1>
             </div>
           ) : null}
           <button
             type="button"
-            className="rounded-md p-1.5 text-sidebar-muted hover:bg-sidebar-hover lg:hidden"
+            className="rounded-md p-1.5 text-slate-300 hover:bg-sidebar-hover lg:hidden"
             onClick={onClose}
             aria-label="Close navigation"
           >
@@ -104,7 +166,7 @@ export function Sidebar({ open, collapsed, onClose, onToggleCollapsed }: Props) 
           </button>
           <button
             type="button"
-            className="hidden rounded-md p-1.5 text-sidebar-muted hover:bg-sidebar-hover lg:inline-flex"
+            className="hidden rounded-md p-1.5 text-slate-300 hover:bg-sidebar-hover lg:inline-flex"
             onClick={onToggleCollapsed}
             aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           >
@@ -117,53 +179,189 @@ export function Sidebar({ open, collapsed, onClose, onToggleCollapsed }: Props) 
         </div>
 
         <nav className="sidebar-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 py-3">
-          {groups.map((group) => (
-            <div key={group.title} className={cn("mb-3", collapsed && "mb-2")}>
-              {!collapsed ? (
-                <p className="mb-1 px-2 text-[10px] font-semibold uppercase tracking-wider text-sidebar-muted">
-                  {group.title}
-                </p>
-              ) : (
-                <div className="mx-auto mb-1 h-px w-6 bg-sidebar-border" />
-              )}
-              <ul className="space-y-0.5">
-                {group.items.map((item) => {
-                  const active = navItemForPath(pathname)?.href === item.href;
-                  const Icon = item.icon;
-                  const label = navLabelForItem(item, { superAdminUser });
-                  return (
-                    <li key={item.href}>
-                      <Link
-                        href={item.href}
-                        title={collapsed ? label : undefined}
-                        onClick={onClose}
-                        className={cn(
-                          "group relative flex items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] font-medium transition-colors",
-                          collapsed && "justify-center px-2",
-                          active
-                            ? "bg-sidebar-active text-sidebar-foreground"
-                            : "text-sidebar-muted hover:bg-sidebar-hover hover:text-sidebar-foreground",
-                        )}
-                      >
-                        {active ? (
-                          <span className="absolute -left-2 top-1/2 -mt-2.5 h-5 w-1 rounded-r-md bg-brand-600" />
-                        ) : null}
-                        <Icon
+          {groups.map((group) => {
+            const GroupIcon = group.icon;
+            const isGroupActive = group.items.some((item) => isItemActive(item.href));
+            const isGroupExpanded = expandedGroups[group.title] ?? isGroupActive;
+            const hasMultiple = group.items.length > 1;
+
+            if (collapsed) {
+              return (
+                <div key={group.title} className="group/collapsed-group relative mb-2">
+                  <button
+                    type="button"
+                    onClick={() => toggleGroup(group.title)}
+                    className={cn(
+                      "mx-auto flex h-10 w-10 items-center justify-center rounded-lg transition-all",
+                      isGroupActive
+                        ? "bg-sidebar-active text-white shadow-sm"
+                        : "text-slate-300 hover:bg-sidebar-hover hover:text-white",
+                    )}
+                    title={group.title}
+                  >
+                    <GroupIcon className="h-5 w-5" />
+                  </button>
+
+                  {/* Flyout menu on hover in collapsed mode */}
+                  <div className="pointer-events-none absolute left-full top-0 z-50 ml-2.5 w-56 opacity-0 transition-all duration-150 group-hover/collapsed-group:pointer-events-auto group-hover/collapsed-group:opacity-100">
+                    <div className="rounded-xl border border-sidebar-border bg-sidebar p-2 shadow-xl">
+                      <div className="mb-1 flex items-center justify-between border-b border-sidebar-border/60 px-2.5 py-1.5">
+                        <p className="text-[11px] font-semibold uppercase tracking-wider text-brand-400">
+                          {group.title}
+                        </p>
+                        <span className="rounded-full bg-sidebar-active px-1.5 py-0.2 text-[10px] font-medium text-slate-200">
+                          {group.items.length}
+                        </span>
+                      </div>
+                      <ul className="space-y-0.5">
+                        {group.items.map((item) => {
+                          const active = isItemActive(item.href);
+                          const ItemIcon = item.icon;
+                          const label = navLabelForItem(item, { superAdminUser });
+                          return (
+                            <li key={item.href}>
+                              <Link
+                                href={item.href}
+                                onClick={onClose}
+                                className={cn(
+                                  "flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
+                                  active
+                                    ? "bg-sidebar-active font-semibold text-white"
+                                    : "text-slate-300 hover:bg-sidebar-hover hover:text-white",
+                                )}
+                              >
+                                <ItemIcon
+                                  className={cn(
+                                    "h-3.5 w-3.5 shrink-0",
+                                    active ? "text-brand-400" : "text-slate-400",
+                                  )}
+                                />
+                                <span className="truncate">{label}</span>
+                              </Link>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              );
+            }
+
+            return (
+              <div key={group.title} className="mb-2">
+                {hasMultiple ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => toggleGroup(group.title)}
+                      className={cn(
+                        "flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-xs font-medium transition-all",
+                        isGroupActive
+                          ? "bg-sidebar-hover/80 text-white"
+                          : "text-slate-300 hover:bg-sidebar-hover hover:text-white",
+                      )}
+                    >
+                      <div className="flex min-w-0 items-center gap-2">
+                        <GroupIcon
                           className={cn(
-                            "h-4 w-4 shrink-0",
-                            active
-                              ? "text-brand-600"
-                              : "text-sidebar-muted group-hover:text-sidebar-foreground",
+                            "h-3.5 w-3.5 shrink-0",
+                            isGroupActive ? "text-brand-400" : "text-slate-400",
                           )}
                         />
-                        {!collapsed ? <span className="truncate">{label}</span> : null}
-                      </Link>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          ))}
+                        <span className="truncate text-[11px] font-semibold uppercase tracking-wider text-slate-200">
+                          {group.title}
+                        </span>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        <span className="rounded-full bg-sidebar-border/80 px-1.5 py-0.2 text-[9px] font-medium text-slate-300">
+                          {group.items.length}
+                        </span>
+                        {isGroupExpanded ? (
+                          <ChevronDown className="h-3 w-3 text-slate-300" />
+                        ) : (
+                          <ChevronRight className="h-3 w-3 text-slate-300" />
+                        )}
+                      </div>
+                    </button>
+
+                    {isGroupExpanded ? (
+                      <ul className="ml-3.5 mt-1 space-y-0.5 border-l border-sidebar-border/80 pl-2.5">
+                        {group.items.map((item) => {
+                          const active = isItemActive(item.href);
+                          const ItemIcon = item.icon;
+                          const label = navLabelForItem(item, { superAdminUser });
+                          return (
+                            <li key={item.href}>
+                              <Link
+                                href={item.href}
+                                onClick={onClose}
+                                className={cn(
+                                  "group relative flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
+                                  active
+                                    ? "bg-sidebar-active text-white font-semibold shadow-2xs"
+                                    : "text-slate-300 hover:bg-sidebar-hover hover:text-white",
+                                )}
+                              >
+                                {active ? (
+                                  <span className="absolute -left-2.5 top-1/2 -mt-2 h-4 w-1 rounded-r-md bg-brand-400" />
+                                ) : null}
+                                <ItemIcon
+                                  className={cn(
+                                    "h-3.5 w-3.5 shrink-0",
+                                    active
+                                      ? "text-brand-400"
+                                      : "text-slate-400 group-hover:text-white",
+                                  )}
+                                />
+                                <span className="truncate">{label}</span>
+                              </Link>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    ) : null}
+                  </>
+                ) : (
+                  // Single-item group rendered as top-level link
+                  <ul className="space-y-0.5">
+                    {group.items.map((item) => {
+                      const active = isItemActive(item.href);
+                      const ItemIcon = item.icon;
+                      const label = navLabelForItem(item, { superAdminUser });
+                      return (
+                        <li key={item.href}>
+                          <Link
+                            href={item.href}
+                            onClick={onClose}
+                            className={cn(
+                              "group relative flex items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors",
+                              active
+                                ? "bg-sidebar-active text-white font-semibold shadow-2xs"
+                                : "text-slate-300 hover:bg-sidebar-hover hover:text-white",
+                            )}
+                          >
+                            {active ? (
+                              <span className="absolute -left-2 top-1/2 -mt-2 h-4 w-1 rounded-r-md bg-brand-400" />
+                            ) : null}
+                            <ItemIcon
+                              className={cn(
+                                "h-4 w-4 shrink-0",
+                                active
+                                  ? "text-brand-400"
+                                  : "text-slate-400 group-hover:text-white",
+                              )}
+                            />
+                            <span className="truncate font-medium">{label}</span>
+                          </Link>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
+            );
+          })}
         </nav>
 
         <div
@@ -182,7 +380,7 @@ export function Sidebar({ open, collapsed, onClose, onToggleCollapsed }: Props) 
                   setProfileOpen(true);
                   onClose();
                 }}
-                className="flex h-9 w-9 items-center justify-center rounded-md text-sidebar-muted transition hover:bg-sidebar-hover disabled:cursor-default disabled:hover:bg-transparent"
+                className="flex h-9 w-9 items-center justify-center rounded-md text-slate-300 transition hover:bg-sidebar-hover hover:text-white disabled:cursor-default disabled:hover:bg-transparent"
                 title={user?.name || "Profile"}
                 aria-label="Profile"
               >
@@ -191,7 +389,7 @@ export function Sidebar({ open, collapsed, onClose, onToggleCollapsed }: Props) 
               <button
                 type="button"
                 onClick={() => void logout()}
-                className="flex h-9 w-9 items-center justify-center rounded-md text-sidebar-muted transition hover:bg-sidebar-hover"
+                className="flex h-9 w-9 items-center justify-center rounded-md text-slate-300 transition hover:bg-sidebar-hover hover:text-white"
                 title="Sign out"
                 aria-label="Sign out"
               >
@@ -211,14 +409,14 @@ export function Sidebar({ open, collapsed, onClose, onToggleCollapsed }: Props) 
                 className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left transition hover:bg-sidebar-hover disabled:cursor-default disabled:hover:bg-transparent"
                 title={canOpenProfile ? "View / edit your profile" : undefined}
               >
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-sidebar-active text-sidebar-muted">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-sidebar-active text-white">
                   <UserRound className="h-4 w-4" />
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[13px] font-medium text-sidebar-foreground">
+                  <span className="block truncate text-[13px] font-medium text-white">
                     {user?.name || "Signed in"}
                   </span>
-                  <span className="block truncate text-[11px] text-sidebar-muted">
+                  <span className="block truncate text-[11px] text-slate-300">
                     {roleLabel || user?.email || user?.username || "HRMS account"}
                   </span>
                 </span>
@@ -226,9 +424,9 @@ export function Sidebar({ open, collapsed, onClose, onToggleCollapsed }: Props) 
               <button
                 type="button"
                 onClick={() => void logout()}
-                className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] font-medium text-sidebar-muted transition hover:bg-sidebar-hover hover:text-sidebar-foreground"
+                className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] font-medium text-slate-300 transition hover:bg-sidebar-hover hover:text-white"
               >
-                <LogOut className="h-4 w-4 shrink-0 text-sidebar-muted" />
+                <LogOut className="h-4 w-4 shrink-0 text-slate-300" />
                 Sign out
               </button>
             </div>

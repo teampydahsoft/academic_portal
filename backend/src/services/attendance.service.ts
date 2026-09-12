@@ -85,6 +85,8 @@ function asTime(value: string | null | undefined) {
 
 export type AttendanceListFilters = {
   date?: string;
+  startDate?: string;
+  endDate?: string;
   collegeId?: number;
   collegeIds?: number[];
   courseId?: number;
@@ -166,7 +168,7 @@ function mapSessionCard(row: SessionListRow, holiday: boolean) {
 export async function listAttendanceSessions(filters: AttendanceListFilters) {
   const date = filters.date || todayIso();
   const today = todayIso();
-  if (date > today) {
+  if (!filters.startDate && date > today) {
     return {
       date,
       scheduled: 0,
@@ -178,7 +180,7 @@ export async function listAttendanceSessions(filters: AttendanceListFilters) {
 
   let generated = null as Awaited<ReturnType<typeof ensureSessionsForDate>> | null;
 
-  if (filters.generate !== false) {
+  if (filters.generate !== false && !filters.startDate) {
     generated = await ensureSessionsForDate(date, {
       collegeId: filters.collegeId,
       courseId: filters.courseId,
@@ -192,11 +194,18 @@ export async function listAttendanceSessions(filters: AttendanceListFilters) {
   }
 
   const where = [
-    "cs.session_date = ?",
     "cs.status <> 'cancelled'",
     "(p.status = 'published' OR ap.id IS NOT NULL)",
   ];
-  const params: unknown[] = [date];
+  const params: unknown[] = [];
+
+  if (filters.startDate && filters.endDate) {
+    where.push("cs.session_date BETWEEN ? AND ?");
+    params.push(filters.startDate, filters.endDate);
+  } else {
+    where.push("cs.session_date = ?");
+    params.push(date);
+  }
 
   if (filters.collegeId) {
     where.push("cs.college_id = ?");

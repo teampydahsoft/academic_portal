@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { PageHeader } from "@/components/ui/PageHeader";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
+import { LoadingAnimation } from "@/components/ui/LoadingAnimation";
 import { Printer } from "lucide-react";
 import { StatusBadge } from "@/components/ui/StatusBadge";
 import { cn } from "@/lib/cn";
@@ -805,9 +806,7 @@ export function TimetablePlannerView({ embedded = false }: { embedded?: boolean 
       ) : null}
 
       {loading ? (
-        <Card className="mb-4">
-          <p className="text-sm text-slate-500">Loading timetable…</p>
-        </Card>
+        <LoadingAnimation label="Loading timetable…" />
       ) : null}
 
       {error ? (

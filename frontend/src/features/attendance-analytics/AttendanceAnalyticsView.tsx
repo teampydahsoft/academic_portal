@@ -860,16 +860,14 @@ export function AttendanceAnalyticsView({ embedded = false }: { embedded?: boole
         </div>
 
         {/* Action button */}
-        {!embedded ? (
-          <button
-            type="button"
-            onClick={handleExportCSV}
-            className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 shadow-2xs hover:bg-slate-50 transition-colors"
-          >
-            <Download className="h-3.5 w-3.5 text-slate-500" />
-            <span>Export CSV</span>
-          </button>
-        ) : null}
+        <button
+          type="button"
+          onClick={handleExportCSV}
+          className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 shadow-2xs hover:bg-slate-50 transition-colors"
+        >
+          <Download className="h-3.5 w-3.5 text-slate-500" />
+          <span>Export CSV</span>
+        </button>
       </div>
 
       {/* Unified Compact Action Toolbar (Zero wasted vertical space) */}

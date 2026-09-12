@@ -31,12 +31,14 @@ export type NavItem = {
 
 export type NavGroup = {
   title: string;
+  icon: typeof LayoutDashboard;
   items: NavItem[];
 };
 
 export const NAV_GROUPS: NavGroup[] = [
   {
     title: "Overview",
+    icon: LayoutDashboard,
     items: [
       {
         label: "Dashboard",
@@ -48,6 +50,7 @@ export const NAV_GROUPS: NavGroup[] = [
   },
   {
     title: "Academics",
+    icon: GraduationCap,
     items: [
       {
         label: "Students",
@@ -91,22 +94,11 @@ export const NAV_GROUPS: NavGroup[] = [
         icon: LineChart,
         permissions: ["attendance_analytics.view"],
       },
-      {
-        label: "Faculty & Departments",
-        href: "/faculty-departments",
-        icon: Users,
-        permissions: ["faculty.view"],
-      },
-      {
-        label: "Curriculum & Subjects",
-        href: "/curriculum-subjects",
-        icon: BookOpen,
-        permissions: ["catalog.view"],
-      },
     ],
   },
   {
     title: "Requests",
+    icon: Inbox,
     items: [
       {
         label: "My Requests",
@@ -124,6 +116,7 @@ export const NAV_GROUPS: NavGroup[] = [
   },
   {
     title: "Examinations",
+    icon: Layers3,
     items: [
       {
         label: "Examinations",
@@ -140,7 +133,32 @@ export const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
+    title: "Reports",
+    icon: FileBarChart2,
+    items: [
+      {
+        label: "Department Timetables",
+        href: "/reports?tab=department-timetables",
+        icon: CalendarDays,
+        permissions: ["timetable.view", "reports.view"],
+      },
+      {
+        label: "Staff Timetable Reports",
+        href: "/reports?tab=staff-timetables",
+        icon: Briefcase,
+        permissions: ["workload.view", "reports.view"],
+      },
+      {
+        label: "Student Analytics Reports",
+        href: "/reports?tab=student-analytics",
+        icon: LineChart,
+        permissions: ["attendance_analytics.view", "reports.view"],
+      },
+    ],
+  },
+  {
     title: "Student Support",
+    icon: ShieldAlert,
     items: [
       {
         label: "Mentoring & Risks",
@@ -152,18 +170,13 @@ export const NAV_GROUPS: NavGroup[] = [
   },
   {
     title: "Operations",
+    icon: AlertTriangle,
     items: [
       {
         label: "Pending & Exceptions",
         href: "/pending-exceptions",
         icon: AlertTriangle,
         permissions: ["pending_exceptions.view"],
-      },
-      {
-        label: "Reports",
-        href: "/reports",
-        icon: FileBarChart2,
-        permissions: ["reports.view"],
       },
       {
         label: "Alerts",
@@ -175,7 +188,20 @@ export const NAV_GROUPS: NavGroup[] = [
   },
   {
     title: "System",
+    icon: Settings,
     items: [
+      {
+        label: "Faculty & Departments",
+        href: "/faculty-departments",
+        icon: Users,
+        permissions: ["faculty.view"],
+      },
+      {
+        label: "Curriculum & Subjects",
+        href: "/curriculum-subjects",
+        icon: BookOpen,
+        permissions: ["catalog.view"],
+      },
       {
         label: "User Management",
         href: "/user-management",
@@ -209,8 +235,9 @@ export function navItemForPath(pathname: string): NavItem | null {
   let best: NavItem | null = null;
   for (const group of NAV_GROUPS) {
     for (const item of group.items) {
-      if (pathname === item.href || pathname.startsWith(`${item.href}/`)) {
-        if (!best || item.href.length > best.href.length) {
+      const itemBase = item.href.split("?")[0];
+      if (pathname === itemBase || pathname.startsWith(`${itemBase}/`)) {
+        if (!best || itemBase.length > best.href.split("?")[0].length) {
           best = item;
         }
       }

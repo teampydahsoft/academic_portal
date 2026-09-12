@@ -3,11 +3,13 @@
 import { FormEvent, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowLeft } from "lucide-react";
+import { Eye, EyeOff } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { useAuth } from "@/components/auth/AuthProvider";
 import { PwaInstallPrompt } from "@/components/pwa/PwaInstallPrompt";
 import { getPortalBranding } from "@/lib/portal-branding";
+
+import { LoadingAnimation } from "@/components/ui/LoadingAnimation";
 
 const REMEMBER_KEY = "ap_login_remember_identifier";
 
@@ -19,6 +21,7 @@ export function LoginForm() {
 
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -89,8 +92,8 @@ export function LoginForm() {
   // Same markup on server + first client paint; auth UI only after hydrate.
   if (!hydrated || loading || user) {
     return (
-      <div className="flex h-full min-h-0 items-center justify-center bg-[#f6f1e8] text-sm text-slate-500">
-        {hydrated && user ? "Redirecting…" : "Loading…"}
+      <div className="flex h-full min-h-dvh items-center justify-center bg-[#F3F7FB] text-sm text-slate-500">
+        <LoadingAnimation label={hydrated && user ? "Redirecting…" : "Loading…"} />
       </div>
     );
   }
@@ -98,32 +101,23 @@ export function LoginForm() {
   const backHref = branding.collegeWebsite || "/";
 
   return (
-    <div className="relative flex h-full min-h-0 items-center justify-center overflow-y-auto bg-[#f6f1e8] px-3 py-6 sm:px-6">
-      <div className="pointer-events-none absolute inset-0 overflow-hidden" aria-hidden>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src="/illustrations/login-screen-background.png"
-          alt=""
-          className="login-bg-kenburns login-bg-ink absolute inset-0 h-full w-full object-cover object-left"
-          draggable={false}
-        />
-        <div className="login-orb absolute -left-16 top-10 h-56 w-56 rounded-full bg-[#c4b49a]/22 blur-3xl" />
-        <div className="login-orb-delay absolute bottom-8 right-[12%] h-40 w-40 rounded-full bg-[#d7c4a3]/18 blur-3xl" />
+    <div className="relative flex h-full min-h-dvh items-center justify-center overflow-hidden bg-[#F3F7FB] px-3 py-6 sm:px-6">
+      {/* Dynamic Backside Animations behind the login card */}
+      <div
+        className="pointer-events-none absolute left-1/2 top-1/2 z-0 h-[650px] w-[650px] -translate-x-1/2 -translate-y-1/2 overflow-visible lg:h-[800px] lg:w-[1050px]"
+        aria-hidden
+      >
+        <div className="login-backdrop-halo absolute left-1/2 top-1/2 h-[600px] w-[600px] rounded-full bg-gradient-to-tr from-[#0F2742]/20 via-[#1e40af]/20 to-[#7c3aed]/25 blur-[100px]" />
+        <div className="login-orb-float-1 absolute -left-16 -top-12 h-80 w-80 rounded-full bg-[#1e40af]/25 blur-[90px]" />
+        <div className="login-orb-float-2 absolute -right-12 -bottom-12 h-96 w-96 rounded-full bg-[#7c3aed]/20 blur-[100px]" />
+        <div className="login-orb-float-1 absolute bottom-6 left-1/3 h-72 w-72 rounded-full bg-[#0284c7]/20 blur-[90px]" />
       </div>
 
       <PwaInstallPrompt />
 
-      <div className="login-illust-enter relative my-auto grid w-full max-w-[1180px] overflow-hidden rounded-2xl border border-[#e6dccb] bg-white shadow-[0_12px_40px_rgba(15,28,46,0.10)] lg:min-h-[min(620px,calc(100vh-3rem))] lg:w-[90vw] lg:grid-cols-2">
-        <Link
-          href={backHref}
-          className="absolute left-4 top-4 z-20 inline-flex h-9 w-9 items-center justify-center rounded-full text-navy-900/70 transition hover:bg-black/5 hover:text-navy-900 lg:text-white/80 lg:hover:bg-white/10 lg:hover:text-white"
-          aria-label="Back"
-        >
-          <ArrowLeft className="h-5 w-5" strokeWidth={1.75} />
-        </Link>
-
+      <div className="login-illust-enter relative z-10 my-auto grid w-full max-w-[1180px] overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-[0_20px_60px_rgba(15,39,66,0.12)] lg:min-h-[min(620px,calc(100vh-3rem))] lg:w-[90vw] lg:grid-cols-2">
         {/* Left: education illustration, same card as the form */}
-        <div className="relative hidden items-center justify-center overflow-hidden bg-[#050505] px-4 py-5 lg:flex xl:px-5 xl:py-6">
+        <div className="relative hidden items-center justify-center overflow-hidden bg-[#0F2742] px-4 py-5 lg:flex xl:px-5 xl:py-6">
           <div className="pointer-events-none absolute inset-0" aria-hidden>
             <div className="login-orb absolute -left-8 top-12 h-44 w-44 rounded-full bg-[#1e4a7a]/40 blur-2xl" />
             <div className="login-orb-delay absolute -right-6 bottom-16 h-36 w-36 rounded-full bg-[#0d6e6a]/35 blur-2xl" />
@@ -184,15 +178,29 @@ export function LoginForm() {
                 <span className="mb-1.5 block text-xs font-medium text-slate-500">
                   Password
                 </span>
-                <input
-                  type="password"
-                  autoComplete="current-password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Your HRMS password"
-                  className="h-11 w-full rounded-lg border border-slate-200 bg-slate-50/80 px-3.5 text-sm text-navy-900 outline-none transition placeholder:text-slate-400 focus:border-navy-800 focus:bg-white focus:ring-2 focus:ring-navy-800/10"
-                  required
-                />
+                <div className="relative">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    autoComplete="current-password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="Your HRMS password"
+                    className="h-11 w-full rounded-lg border border-slate-200 bg-slate-50/80 pl-3.5 pr-10 text-sm text-navy-900 outline-none transition placeholder:text-slate-400 focus:border-navy-800 focus:bg-white focus:ring-2 focus:ring-navy-800/10"
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((prev) => !prev)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 transition hover:text-navy-900"
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                  >
+                    {showPassword ? (
+                      <EyeOff className="h-4 w-4" />
+                    ) : (
+                      <Eye className="h-4 w-4" />
+                    )}
+                  </button>
+                </div>
               </label>
 
               <div className="flex items-center justify-between gap-3 pt-0.5">
