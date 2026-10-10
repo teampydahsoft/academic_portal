@@ -4,6 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertCircle,
   ArrowRight,
+  BookOpen,
+  Briefcase,
   Building2,
   Calendar,
   Check,
@@ -22,6 +24,7 @@ import {
   Sparkles,
   Square,
   Trash2,
+  UserCheck,
   Users,
   X,
   AlertTriangle,
@@ -169,6 +172,22 @@ function getCurrentAcademicYearLabel(): string {
   return `${startYear}-${startYear + 1}`;
 }
 
+function calculateSlotDurationMinutes(slot?: TimingSlot): number {
+  if (!slot?.startTime || !slot?.endTime) return 50;
+  const [sh, sm] = slot.startTime.split(":").map(Number);
+  const [eh, em] = slot.endTime.split(":").map(Number);
+  if (!Number.isFinite(sh) || !Number.isFinite(sm) || !Number.isFinite(eh) || !Number.isFinite(em)) return 50;
+  const start = sh * 60 + sm;
+  const end = eh * 60 + em;
+  const diff = end - start;
+  return diff > 0 ? diff : 50;
+}
+
+function formatMinutesToHours(minutes: number): string {
+  const hours = minutes / 60;
+  return hours % 1 === 0 ? `${hours} hrs` : `${hours.toFixed(1)} hrs`;
+}
+
 export function CombinedTimetableCreationView() {
   const { masters, loading: mastersLoading } = useAcademicContext();
 
@@ -202,12 +221,22 @@ export function CombinedTimetableCreationView() {
     current?: LocalPeriodAssignment;
   } | null>(null);
 
+  // Publish & Workload review modal state
+  const [isPublishModalOpen, setIsPublishModalOpen] = useState<boolean>(false);
+  const [reviewTab, setReviewTab] = useState<"faculty" | "subjects">("faculty");
+
   // Operation statuses
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [saveStatus, setSaveStatus] = useState<{
     type: "success" | "error";
     message: string;
     details?: Array<{ branchId: number; planId: number; status: string; versionNo: number }>;
+    workloadSummary?: {
+      totalSlots: number;
+      totalHours: string;
+      facultyCount: number;
+      subjectsCount: number;
+    };
   } | null>(null);
 
   // Resolve current active academic year strictly to current year with next year (e.g. 2026-2027)
@@ -542,6 +571,177 @@ export function CombinedTimetableCreationView() {
     return Object.keys(assignments).length;
   }, [assignments]);
 
+  // Fast slot lookup map for durations
+  const timingSlotMap = useMemo(() => {
+    const map = new Map<number, TimingSlot>();
+    for (const slot of timingSlots) {
+      map.set(slot.id, slot);
+    }
+    return map;
+  }, [timingSlots]);
+
+  // Aggregated Subjects Total Slots Summary
+  const subjectSlotsSummary = useMemo(() => {
+    const map = new Map<
+      string,
+      {
+        code: string;
+        name: string;
+        type: string;
+        slotsCount: number;
+        totalMinutes: number;
+        facultySet: Set<string>;
+      }
+    >();
+
+    for (const a of Object.values(assignments)) {
+      const key = a.subjectId
+        ? `sub-${a.subjectId}`
+        : `custom-${a.subjectCode || a.customLabel || "unlabeled"}`;
+      const slot = timingSlotMap.get(a.timingSlotId);
+      const minutes = calculateSlotDurationMinutes(slot);
+
+      const code = a.subjectCode || a.customLabel || "—";
+      const name = a.subjectName || a.customLabel || "Period";
+      const type = a.entryType;
+
+      const existing = map.get(key);
+      if (!existing) {
+        const facultySet = new Set<string>();
+        if (a.facultyName) facultySet.add(a.facultyName);
+        map.set(key, {
+          code,
+          name,
+          type,
+          slotsCount: 1,
+          totalMinutes: minutes,
+          facultySet,
+        });
+      } else {
+        existing.slotsCount += 1;
+        existing.totalMinutes += minutes;
+        if (a.facultyName) existing.facultySet.add(a.facultyName);
+      }
+    }
+
+    return Array.from(map.values())
+      .map((item) => ({
+        ...item,
+        totalHours: formatMinutesToHours(item.totalMinutes),
+        facultyNames: Array.from(item.facultySet),
+      }))
+      .sort((a, b) => b.slotsCount - a.slotsCount);
+  }, [assignments, timingSlotMap]);
+
+  // Aggregated Faculty Total Working Hours Summary
+  const facultyWorkloadSummary = useMemo(() => {
+    const map = new Map<
+      string,
+      {
+        hrmsId: string;
+        name: string;
+        department: string;
+        designation: string;
+        slotsCount: number;
+        totalMinutes: number;
+        subjectsSet: Set<string>;
+        daysSet: Set<string>;
+      }
+    >();
+
+    let unassignedSlots = 0;
+
+    for (const a of Object.values(assignments)) {
+      const slot = timingSlotMap.get(a.timingSlotId);
+      const minutes = calculateSlotDurationMinutes(slot);
+
+      if (!a.hrmsEmployeeId && !a.facultyName) {
+        unassignedSlots += 1;
+        continue;
+      }
+
+      const key = a.hrmsEmployeeId || a.facultyName;
+      const existing = map.get(key);
+      const facultyOpt = facultyList.find((f) => f.hrmsEmployeeId === a.hrmsEmployeeId);
+
+      if (!existing) {
+        const subjectsSet = new Set<string>();
+        if (a.subjectCode || a.customLabel) subjectsSet.add(a.subjectCode || a.customLabel);
+        const daysSet = new Set<string>();
+        if (a.dayOfWeek) {
+          const dayName = DAY_CODE_TO_LABEL[a.dayOfWeek as keyof typeof DAY_CODE_TO_LABEL] || a.dayOfWeek;
+          daysSet.add(dayName.slice(0, 3));
+        }
+
+        map.set(key, {
+          hrmsId: a.hrmsEmployeeId || "—",
+          name: a.facultyName || facultyOpt?.name || "Faculty",
+          department: facultyOpt?.department || facultyOpt?.division || "—",
+          designation: facultyOpt?.designation || "Faculty",
+          slotsCount: 1,
+          totalMinutes: minutes,
+          subjectsSet,
+          daysSet,
+        });
+      } else {
+        existing.slotsCount += 1;
+        existing.totalMinutes += minutes;
+        if (a.subjectCode || a.customLabel) existing.subjectsSet.add(a.subjectCode || a.customLabel);
+        if (a.dayOfWeek) {
+          const dayName = DAY_CODE_TO_LABEL[a.dayOfWeek as keyof typeof DAY_CODE_TO_LABEL] || a.dayOfWeek;
+          existing.daysSet.add(dayName.slice(0, 3));
+        }
+      }
+    }
+
+    const list = Array.from(map.values())
+      .map((item) => ({
+        ...item,
+        totalHours: formatMinutesToHours(item.totalMinutes),
+        subjectCodes: Array.from(item.subjectsSet),
+        days: Array.from(item.daysSet),
+      }))
+      .sort((a, b) => b.totalMinutes - a.totalMinutes);
+
+    const totalMinutes = list.reduce((sum, f) => sum + f.totalMinutes, 0);
+
+    return {
+      list,
+      unassignedSlots,
+      totalFacultyMinutes: totalMinutes,
+      totalFacultyHours: formatMinutesToHours(totalMinutes),
+    };
+  }, [assignments, timingSlotMap, facultyList]);
+
+  // Open Publish Review & Workload Confirmation Modal
+  const handleOpenPublishModal = () => {
+    if (!collegeId || !courseId || !academicYear || semester == null) {
+      setSaveStatus({
+        type: "error",
+        message: "Please ensure College, Course, Year of Study, and Semester are all selected.",
+      });
+      return;
+    }
+
+    if (selectedBranchIds.length === 0) {
+      setSaveStatus({
+        type: "error",
+        message: "Please select at least one branch in the checklist to apply the timetable to.",
+      });
+      return;
+    }
+
+    if (totalAssignedCount === 0) {
+      setSaveStatus({
+        type: "error",
+        message: "No periods have been assigned yet. Please assign at least one period slot before publishing.",
+      });
+      return;
+    }
+
+    setIsPublishModalOpen(true);
+  };
+
   // Execute Save or Publish
   const handleExecuteSave = async (publish: boolean) => {
     if (!collegeId || !courseId || !academicYear || semester == null) {
@@ -611,7 +811,17 @@ export function CombinedTimetableCreationView() {
         type: "success",
         message: data.message || `Successfully ${publish ? "published" : "saved"} combined timetable for ${selectedBranchIds.length} branches!`,
         details: data.results,
+        workloadSummary: {
+          totalSlots: totalAssignedCount,
+          totalHours: facultyWorkloadSummary.totalFacultyHours,
+          facultyCount: facultyWorkloadSummary.list.length,
+          subjectsCount: subjectSlotsSummary.length,
+        },
       });
+
+      if (publish) {
+        setIsPublishModalOpen(false);
+      }
 
       // Refresh overview
       fetchOverview();
@@ -922,8 +1132,24 @@ export function CombinedTimetableCreationView() {
           ) : (
             <AlertCircle className="h-5 w-5 text-red-600 shrink-0 mt-0.5" />
           )}
-          <div className="flex-1 space-y-1">
+          <div className="flex-1 space-y-1.5">
             <div className="font-bold text-sm leading-tight">{saveStatus.message}</div>
+            {saveStatus.workloadSummary && (
+              <div className="flex flex-wrap items-center gap-2 pt-1 text-[11px] font-semibold text-emerald-800">
+                <span className="rounded bg-emerald-100 px-2 py-0.5 border border-emerald-200">
+                  {saveStatus.workloadSummary.totalSlots} Slots Assigned
+                </span>
+                <span className="rounded bg-emerald-100 px-2 py-0.5 border border-emerald-200">
+                  {saveStatus.workloadSummary.totalHours} Faculty Teaching Workload
+                </span>
+                <span className="rounded bg-emerald-100 px-2 py-0.5 border border-emerald-200">
+                  {saveStatus.workloadSummary.subjectsCount} Subjects Covered
+                </span>
+                <span className="rounded bg-emerald-100 px-2 py-0.5 border border-emerald-200">
+                  {saveStatus.workloadSummary.facultyCount} Faculty Deployed
+                </span>
+              </div>
+            )}
             {saveStatus.details && saveStatus.details.length > 0 && (
               <div className="mt-2 flex flex-wrap gap-2 pt-1">
                 {saveStatus.details.map((d) => {
@@ -985,6 +1211,19 @@ export function CombinedTimetableCreationView() {
               </Button>
             )}
 
+            {totalAssignedCount > 0 && (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setIsPublishModalOpen(true)}
+                className="text-xs h-8 gap-1.5"
+                title="View faculty working hours and subject slots breakdown"
+              >
+                <Clock className="h-3.5 w-3.5 text-indigo-600" />
+                Workload & Slots
+              </Button>
+            )}
+
             <Button
               variant="secondary"
               size="sm"
@@ -999,7 +1238,7 @@ export function CombinedTimetableCreationView() {
             <Button
               variant="primary"
               size="sm"
-              onClick={() => handleExecuteSave(true)}
+              onClick={handleOpenPublishModal}
               disabled={isSaving || totalAssignedCount === 0}
               className="text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white h-8 gap-1.5 shadow-xs"
             >
@@ -1160,6 +1399,27 @@ export function CombinedTimetableCreationView() {
           selectedBranchCount={selectedBranchIds.length}
           onSave={handleSaveSlotAssignment}
           onClear={() => handleClearSlotAssignment(activeSlotModal.day, activeSlotModal.slot.id)}
+        />
+      )}
+
+      {/* Publish & Workload Review Modal */}
+      {isPublishModalOpen && (
+        <PublishReviewModal
+          isOpen={isPublishModalOpen}
+          onClose={() => setIsPublishModalOpen(false)}
+          onConfirmPublish={() => handleExecuteSave(true)}
+          isSaving={isSaving}
+          totalAssignedCount={totalAssignedCount}
+          selectedBranches={selectedBranches}
+          collegeName={masters?.colleges.find((c) => c.id === collegeId)?.name || "College"}
+          courseName={selectedCourse?.name || "Course"}
+          year={year}
+          semester={semester}
+          academicYear={currentAcademicYear || academicYear}
+          reviewTab={reviewTab}
+          onTabChange={setReviewTab}
+          subjectSlotsSummary={subjectSlotsSummary}
+          facultyWorkloadSummary={facultyWorkloadSummary}
         />
       )}
     </div>
@@ -1535,6 +1795,374 @@ function PeriodEditModal({
               Apply to Slot
             </Button>
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ----------------------------------------------------------------------
+// Publish Confirmation & Workload Summary Modal Sub-Component
+// ----------------------------------------------------------------------
+
+type PublishReviewModalProps = {
+  isOpen: boolean;
+  onClose: () => void;
+  onConfirmPublish: () => void;
+  isSaving: boolean;
+  totalAssignedCount: number;
+  selectedBranches: Array<{ id: number; name: string; code: string | null }>;
+  collegeName: string;
+  courseName: string;
+  year: number;
+  semester: number;
+  academicYear: string;
+  reviewTab: "faculty" | "subjects";
+  onTabChange: (tab: "faculty" | "subjects") => void;
+  subjectSlotsSummary: Array<{
+    code: string;
+    name: string;
+    type: string;
+    slotsCount: number;
+    totalHours: string;
+    facultyNames: string[];
+  }>;
+  facultyWorkloadSummary: {
+    list: Array<{
+      hrmsId: string;
+      name: string;
+      department: string;
+      designation: string;
+      slotsCount: number;
+      totalHours: string;
+      subjectCodes: string[];
+      days: string[];
+    }>;
+    unassignedSlots: number;
+    totalFacultyHours: string;
+  };
+};
+
+function PublishReviewModal({
+  isOpen,
+  onClose,
+  onConfirmPublish,
+  isSaving,
+  totalAssignedCount,
+  selectedBranches,
+  collegeName,
+  courseName,
+  year,
+  semester,
+  academicYear,
+  reviewTab,
+  onTabChange,
+  subjectSlotsSummary,
+  facultyWorkloadSummary,
+}: PublishReviewModalProps) {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      {/* Backdrop */}
+      <div
+        className="absolute inset-0 bg-navy-950/60 backdrop-blur-xs transition-opacity"
+        onClick={() => !isSaving && onClose()}
+      />
+
+      {/* Modal Dialog */}
+      <div
+        role="dialog"
+        aria-modal="true"
+        className="relative z-10 flex w-full max-w-4xl max-h-[90vh] flex-col overflow-hidden rounded-2xl border border-border bg-white shadow-2xl animate-in fade-in zoom-in-95 duration-150"
+      >
+        {/* Header */}
+        <div className="border-b border-border bg-gradient-to-r from-indigo-50/90 via-purple-50/40 to-white px-6 py-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-indigo-600 text-white shadow-xs">
+                  <Sparkles className="h-4 w-4" />
+                </span>
+                <h3 className="text-lg font-bold text-navy-950">
+                  Publish Timetable Workload & Slots Review
+                </h3>
+              </div>
+              <p className="mt-1 text-xs text-slate-500">
+                Verify faculty total working hours and subject slot distribution before publishing to all {selectedBranches.length} branches.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={isSaving}
+              className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 disabled:opacity-50"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+
+          {/* Scope Tags */}
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+            <span className="rounded-md bg-white border border-indigo-200/80 px-2.5 py-0.5 font-semibold text-slate-700">
+              College: <strong className="text-navy-900">{collegeName}</strong>
+            </span>
+            <span className="rounded-md bg-white border border-indigo-200/80 px-2.5 py-0.5 font-semibold text-slate-700">
+              Course: <strong className="text-navy-900">{courseName}</strong> (Yr {year}, Sem {semester})
+            </span>
+            <span className="rounded-md bg-white border border-indigo-200/80 px-2.5 py-0.5 font-semibold text-slate-700">
+              Academic Year: <strong className="text-navy-900">{academicYear}</strong>
+            </span>
+            <span className="rounded-md bg-indigo-100/90 border border-indigo-300 px-2.5 py-0.5 font-bold text-indigo-900">
+              Target Branches ({selectedBranches.length}): {selectedBranches.map((b) => b.code || b.name).join(" + ")}
+            </span>
+          </div>
+        </div>
+
+        {/* 4 KPI Cards */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-5 bg-slate-50/60 border-b border-slate-100">
+          <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-2xs">
+            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
+              Total Assigned Slots
+            </span>
+            <div className="mt-1 flex items-baseline gap-1.5">
+              <span className="text-xl font-bold text-navy-950">{totalAssignedCount}</span>
+              <span className="text-[11px] text-slate-500">periods/week</span>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-indigo-200 bg-indigo-50/50 p-3 shadow-2xs">
+            <span className="text-[11px] font-bold text-indigo-800 uppercase tracking-wider block">
+              Total Teaching Workload
+            </span>
+            <div className="mt-1 flex items-baseline gap-1.5">
+              <span className="text-xl font-bold text-indigo-950">{facultyWorkloadSummary.totalFacultyHours}</span>
+              <span className="text-[11px] text-indigo-700">hours/week</span>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-2xs">
+            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
+              Configured Subjects
+            </span>
+            <div className="mt-1 flex items-baseline gap-1.5">
+              <span className="text-xl font-bold text-navy-950">{subjectSlotsSummary.length}</span>
+              <span className="text-[11px] text-slate-500">subjects</span>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-white p-3 shadow-2xs">
+            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
+              Faculty Deployed
+            </span>
+            <div className="mt-1 flex items-baseline gap-1.5">
+              <span className="text-xl font-bold text-navy-950">{facultyWorkloadSummary.list.length}</span>
+              <span className="text-[11px] text-slate-500">teachers</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Modal Scrollable Body */}
+        <div className="p-5 overflow-y-auto space-y-4 max-h-[calc(90vh-270px)]">
+          {/* Optional unassigned notice */}
+          {facultyWorkloadSummary.unassignedSlots > 0 && (
+            <div className="flex items-center gap-2 rounded-xl border border-amber-200 bg-amber-50/90 px-3.5 py-2.5 text-xs text-amber-900">
+              <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0" />
+              <span>
+                <strong>{facultyWorkloadSummary.unassignedSlots} slot(s)</strong> have no faculty member assigned. They will be published with open faculty allocation.
+              </span>
+            </div>
+          )}
+
+          {/* Section Switcher Tabs */}
+          <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => onTabChange("faculty")}
+                className={cn(
+                  "px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer",
+                  reviewTab === "faculty"
+                    ? "bg-indigo-600 text-white shadow-xs"
+                    : "text-slate-600 hover:bg-slate-100",
+                )}
+              >
+                <UserCheck className="h-3.5 w-3.5" />
+                Faculty Total Working Hours ({facultyWorkloadSummary.list.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => onTabChange("subjects")}
+                className={cn(
+                  "px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer",
+                  reviewTab === "subjects"
+                    ? "bg-indigo-600 text-white shadow-xs"
+                    : "text-slate-600 hover:bg-slate-100",
+                )}
+              >
+                <BookOpen className="h-3.5 w-3.5" />
+                Subjects Total Slots ({subjectSlotsSummary.length})
+              </button>
+            </div>
+          </div>
+
+          {/* Tab 1: Faculty Total Working Hours */}
+          {reviewTab === "faculty" && (
+            <div className="overflow-x-auto rounded-xl border border-slate-200 shadow-2xs">
+              <table className="w-full border-collapse text-left text-xs">
+                <thead>
+                  <tr className="border-b border-slate-200 bg-slate-100/80 text-navy-950 font-bold uppercase text-[10.5px]">
+                    <th className="py-2.5 px-3">Faculty Member</th>
+                    <th className="py-2.5 px-3">Department</th>
+                    <th className="py-2.5 px-3 text-center">Total Assigned Slots</th>
+                    <th className="py-2.5 px-3 text-center">Total Working Hours</th>
+                    <th className="py-2.5 px-3">Subjects Taught</th>
+                    <th className="py-2.5 px-3">Active Days</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 bg-white">
+                  {facultyWorkloadSummary.list.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="py-8 text-center text-xs text-slate-400 italic">
+                        No faculty members assigned to period slots yet.
+                      </td>
+                    </tr>
+                  ) : (
+                    facultyWorkloadSummary.list.map((f, idx) => (
+                      <tr key={f.hrmsId || idx} className="hover:bg-slate-50/70 transition-colors">
+                        <td className="py-2.5 px-3">
+                          <div className="font-bold text-navy-950">{f.name}</div>
+                          {f.hrmsId && f.hrmsId !== "—" && (
+                            <div className="text-[10px] text-slate-400 font-mono">ID: {f.hrmsId}</div>
+                          )}
+                        </td>
+                        <td className="py-2.5 px-3 text-slate-600 font-medium">
+                          {f.department || "—"}
+                        </td>
+                        <td className="py-2.5 px-3 text-center">
+                          <span className="inline-flex items-center justify-center rounded-md bg-indigo-50 px-2 py-0.5 text-xs font-bold text-indigo-900 border border-indigo-100">
+                            {f.slotsCount} slots
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3 text-center">
+                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-bold text-emerald-800 border border-emerald-200">
+                            <Clock className="h-3 w-3 text-emerald-600" />
+                            {f.totalHours}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3">
+                          <div className="flex flex-wrap gap-1">
+                            {f.subjectCodes.map((c, i) => (
+                              <span key={i} className="rounded bg-slate-100 px-1.5 py-0.2 text-[10px] font-semibold text-slate-700">
+                                {c}
+                              </span>
+                            ))}
+                          </div>
+                        </td>
+                        <td className="py-2.5 px-3 text-slate-500 text-[11px]">
+                          {f.days.join(", ")}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Tab 2: Subjects Total Slots */}
+          {reviewTab === "subjects" && (
+            <div className="overflow-x-auto rounded-xl border border-slate-200 shadow-2xs">
+              <table className="w-full border-collapse text-left text-xs">
+                <thead>
+                  <tr className="border-b border-slate-200 bg-slate-100/80 text-navy-950 font-bold uppercase text-[10.5px]">
+                    <th className="py-2.5 px-3">Subject Code</th>
+                    <th className="py-2.5 px-3">Subject Name</th>
+                    <th className="py-2.5 px-3">Type</th>
+                    <th className="py-2.5 px-3 text-center">Total Slots Allocated</th>
+                    <th className="py-2.5 px-3 text-center">Weekly Duration</th>
+                    <th className="py-2.5 px-3">Assigned Faculty</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 bg-white">
+                  {subjectSlotsSummary.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="py-8 text-center text-xs text-slate-400 italic">
+                        No subjects assigned in this timetable schedule yet.
+                      </td>
+                    </tr>
+                  ) : (
+                    subjectSlotsSummary.map((s, idx) => (
+                      <tr key={idx} className="hover:bg-slate-50/70 transition-colors">
+                        <td className="py-2.5 px-3 font-mono font-bold text-navy-950">
+                          {s.code}
+                        </td>
+                        <td className="py-2.5 px-3 font-semibold text-slate-800">
+                          {s.name}
+                        </td>
+                        <td className="py-2.5 px-3">
+                          <span
+                            className={cn(
+                              "rounded px-1.5 py-0.5 text-[10px] font-bold uppercase",
+                              s.type === "theory"
+                                ? "bg-blue-100 text-blue-900"
+                                : s.type === "lab"
+                                ? "bg-purple-100 text-purple-900"
+                                : "bg-slate-100 text-slate-700",
+                            )}
+                          >
+                            {s.type}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3 text-center">
+                          <span className="inline-flex items-center justify-center rounded-md bg-indigo-50 px-2 py-0.5 text-xs font-bold text-indigo-900 border border-indigo-100">
+                            {s.slotsCount} slots
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3 text-center">
+                          <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-bold text-slate-800">
+                            <Clock className="h-3 w-3 text-slate-500" />
+                            {s.totalHours}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3 text-slate-700">
+                          {s.facultyNames.length > 0 ? (
+                            <span className="font-medium">{s.facultyNames.join(", ")}</span>
+                          ) : (
+                            <span className="text-slate-400 italic text-[11px]">Unassigned</span>
+                          )}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="border-t border-slate-200 bg-slate-50/80 px-6 py-3.5 flex items-center justify-between">
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={onClose}
+            disabled={isSaving}
+            className="text-xs"
+          >
+            Back to Planner
+          </Button>
+
+          <Button
+            variant="primary"
+            size="sm"
+            onClick={onConfirmPublish}
+            disabled={isSaving || totalAssignedCount === 0}
+            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs gap-1.5 h-8.5 px-4 shadow-xs"
+          >
+            {isSaving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+            Confirm & Publish to All {selectedBranches.length} Branches
+          </Button>
         </div>
       </div>
     </div>
