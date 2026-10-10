@@ -7,8 +7,11 @@ import {
   statusFromAuthzError,
 } from "../authz/require-permission.js";
 import {
+  cloneCombinedTimetable,
   combineTimetableSections,
   copyTimetablePlan,
+  getCombinedBranchesOverview,
+  getCombinedSubjects,
   getTimetablePlanScope,
   getTimetablePlanner,
   getTimetableVersions,
@@ -20,6 +23,7 @@ import {
   listTimetableSections,
   publishTimetablePlan,
   reviewTimetablePlan,
+  saveCombinedTimetable,
   saveTimetableDraft,
 } from "../services/timetables.service.js";
 import {
@@ -124,6 +128,188 @@ timetablesRouter.post("/timing", requirePermission("timetable.edit"), async (req
     });
     const created = await upsertTimingTemplate(req.body);
     res.status(201).json(created);
+  } catch (error) {
+    sendAuthzError(res, error, next);
+  }
+});
+
+timetablesRouter.get("/combined/overview", requirePermission("timetable.view"), async (req: AuthedRequest, res, next) => {
+  try {
+    const collegeId = num(req.query.collegeId);
+    const courseId = num(req.query.courseId);
+    const academicYear = str(req.query.academicYear);
+    const batch = str(req.query.batch);
+    const year = num(req.query.year);
+    const semester = num(req.query.semester);
+    const section = str(req.query.section);
+
+    if (!collegeId || !courseId || !academicYear || semester == null) {
+      res.status(400).json({ message: "collegeId, courseId, academicYear, and semester are required." });
+      return;
+    }
+
+    scopedFilters(req, { collegeId });
+
+    const result = await getCombinedBranchesOverview({
+      collegeId,
+      courseId,
+      academicYear,
+      batch: batch ?? null,
+      year: year ?? null,
+      semester,
+      section: section ?? null,
+    });
+    res.json(result);
+  } catch (error) {
+    sendAuthzError(res, error, next);
+  }
+});
+
+timetablesRouter.get("/combined/subjects", requirePermission("timetable.view"), async (req: AuthedRequest, res, next) => {
+  try {
+    const collegeId = num(req.query.collegeId);
+    const courseId = num(req.query.courseId);
+    const academicYear = str(req.query.academicYear);
+    const batch = str(req.query.batch);
+    const year = num(req.query.year);
+    const semester = num(req.query.semester);
+
+    let branchIds: number[] = [];
+    if (typeof req.query.branchIds === "string") {
+      branchIds = req.query.branchIds.split(",").map(Number).filter((n) => Number.isFinite(n) && n > 0);
+    } else if (Array.isArray(req.query.branchIds)) {
+      branchIds = (req.query.branchIds as string[]).map(Number).filter((n) => Number.isFinite(n) && n > 0);
+    }
+
+    if (!collegeId || !courseId || semester == null || branchIds.length === 0) {
+      res.status(400).json({ message: "collegeId, courseId, semester, and branchIds are required." });
+      return;
+    }
+
+    scopedFilters(req, { collegeId });
+
+    const subjects = await getCombinedSubjects({
+      collegeId,
+      courseId,
+      academicYear: academicYear ?? null,
+      batch: batch ?? null,
+      year: year ?? null,
+      semester,
+      branchIds,
+    });
+    res.json({ data: subjects });
+  } catch (error) {
+    sendAuthzError(res, error, next);
+  }
+});
+
+timetablesRouter.post("/combined/save", requirePermission("timetable.edit"), async (req: AuthedRequest, res, next) => {
+  try {
+    const body = req.body as {
+      collegeId: number;
+      courseId: number;
+      branchIds: number[];
+      academicYear: string;
+      batch?: string | null;
+      year?: number | null;
+      semester: number;
+      section?: string | null;
+      notes?: string | null;
+      assignments: unknown[];
+      publish?: boolean;
+    };
+
+    scopedFilters(req, {
+      collegeId: Number(body.collegeId),
+    });
+
+    const result = await saveCombinedTimetable({
+      collegeId: Number(body.collegeId),
+      courseId: Number(body.courseId),
+      branchIds: (body.branchIds ?? []).map(Number),
+      academicYear: String(body.academicYear),
+      batch: body.batch ? String(body.batch) : null,
+      year: body.year != null ? Number(body.year) : null,
+      semester: Number(body.semester),
+      section: body.section ? String(body.section) : null,
+      notes: body.notes ? String(body.notes) : null,
+      assignments: (body.assignments ?? []) as never[],
+      publish: Boolean(body.publish),
+      actorUserId: req.authUser?.id,
+      ipAddress: req.ip,
+    });
+
+    await writeAuditLog({
+      actorUserId: req.authUser!.id,
+      action: body.publish ? "timetable.combined_published" : "timetable.combined_draft_saved",
+      entityType: "ap_timetable_plans",
+      entityId: result.results[0]?.planId ?? 0,
+      newValue: {
+        collegeId: body.collegeId,
+        courseId: body.courseId,
+        branchIds: body.branchIds,
+        academicYear: body.academicYear,
+        semester: body.semester,
+        results: result.results,
+      },
+      ipAddress: req.ip,
+    });
+
+    res.json(result);
+  } catch (error) {
+    sendAuthzError(res, error, next);
+  }
+});
+
+timetablesRouter.post("/combined/clone", requirePermission("timetable.edit"), async (req: AuthedRequest, res, next) => {
+  try {
+    const body = req.body as {
+      collegeId: number;
+      courseId: number;
+      sourceBranchId: number;
+      sourceSection?: string | null;
+      targetBranchIds: number[];
+      academicYear: string;
+      batch: string;
+      year?: number | null;
+      semester: number;
+      publish?: boolean;
+    };
+
+    scopedFilters(req, {
+      collegeId: Number(body.collegeId),
+    });
+
+    const result = await cloneCombinedTimetable({
+      collegeId: Number(body.collegeId),
+      courseId: Number(body.courseId),
+      sourceBranchId: Number(body.sourceBranchId),
+      sourceSection: body.sourceSection ? String(body.sourceSection) : null,
+      targetBranchIds: (body.targetBranchIds ?? []).map(Number),
+      academicYear: String(body.academicYear),
+      batch: String(body.batch),
+      year: body.year != null ? Number(body.year) : null,
+      semester: Number(body.semester),
+      publish: Boolean(body.publish),
+      actorUserId: req.authUser?.id,
+      ipAddress: req.ip,
+    });
+
+    await writeAuditLog({
+      actorUserId: req.authUser!.id,
+      action: "timetable.combined_cloned",
+      entityType: "ap_timetable_plans",
+      entityId: result.results[0]?.planId ?? 0,
+      newValue: {
+        collegeId: body.collegeId,
+        sourceBranchId: body.sourceBranchId,
+        targetBranchIds: body.targetBranchIds,
+        results: result.results,
+      },
+      ipAddress: req.ip,
+    });
+
+    res.json(result);
   } catch (error) {
     sendAuthzError(res, error, next);
   }

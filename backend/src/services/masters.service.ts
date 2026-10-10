@@ -85,9 +85,10 @@ function parseBranchSections(metadata: unknown): {
         typeof strengthRaw === "number"
           ? strengthRaw
           : Number(strengthRaw) || undefined;
-      return { name, strength };
+      const itemMeta: BranchSectionMeta = strength !== undefined ? { name, strength } : { name };
+      return itemMeta;
     })
-    .filter((item): item is BranchSectionMeta => Boolean(item));
+    .filter((item): item is BranchSectionMeta => item !== null);
 
   return { enabled, items };
 }
@@ -310,7 +311,7 @@ export async function getAcademicMasters() {
     academicYears: sortedYears.map((y) => ({
       id: y.id,
       label: y.year_label,
-      isActive: Number(y.is_active) === 1,
+      isActive: y.year_label === activeYear,
     })),
     colleges: colleges.map((c) => ({
       id: c.id,

@@ -32,6 +32,7 @@ const HIDDEN_ON = [
   "/attendance-posting",
   "/internal-marks-management",
   "/internal-marks",
+  "/timetables/combined",
 ];
 
 type Props = {

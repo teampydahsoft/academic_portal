@@ -20,6 +20,7 @@ import {
   UserCog,
   Clock3,
   ArrowLeftRight,
+  GitMerge,
 } from "lucide-react";
 
 export type NavItem = {
@@ -81,6 +82,12 @@ export const NAV_GROUPS: NavGroup[] = [
         label: "Master Timetable",
         href: "/timetables",
         icon: CalendarDays,
+        permissions: ["timetable.view"],
+      },
+      {
+        label: "Combined Classes",
+        href: "/timetables/combined",
+        icon: GitMerge,
         permissions: ["timetable.view"],
       },
       {
