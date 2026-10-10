@@ -1483,6 +1483,7 @@ export async function getMasterVsChangedTimetableReport(filters: MasterVsChanged
       subjectCode: string;
       subjectName: string;
       masterWeeklyPeriods: number;
+      totalScheduled: number;
       totalConducted: number;
       timesChanged: number;
       timesSwappedOut: number;
@@ -1515,6 +1516,7 @@ export async function getMasterVsChangedTimetableReport(filters: MasterVsChanged
         subjectCode: code,
         subjectName: m.subject_name?.trim() || m.custom_label?.trim() || code,
         masterWeeklyPeriods: 0,
+        totalScheduled: 0,
         totalConducted: 0,
         timesChanged: 0,
         timesSwappedOut: 0,
@@ -1553,6 +1555,7 @@ export async function getMasterVsChangedTimetableReport(filters: MasterVsChanged
         subjectCode: code,
         subjectName: s.subject_name?.trim() || code,
         masterWeeklyPeriods: 0,
+        totalScheduled: 0,
         totalConducted: 0,
         timesChanged: 0,
         timesSwappedOut: 0,
@@ -1561,6 +1564,7 @@ export async function getMasterVsChangedTimetableReport(filters: MasterVsChanged
         totalPresent: 0,
         totalMarked: 0,
       };
+      existing.totalScheduled += Number(s.total_sessions) || 0;
       existing.totalConducted += Number(s.conducted_sessions) || 0;
       existing.totalPresent += Number(s.total_present) || 0;
       existing.totalMarked += Number(s.total_marked) || 0;
@@ -1632,6 +1636,7 @@ export async function getMasterVsChangedTimetableReport(filters: MasterVsChanged
         subjectCode: code,
         subjectName: r.new_subject_name?.trim() || code,
         masterWeeklyPeriods: 0,
+        totalScheduled: 0,
         totalConducted: 0,
         timesChanged: 0,
         timesSwappedOut: 0,
@@ -1704,18 +1709,33 @@ export async function getMasterVsChangedTimetableReport(filters: MasterVsChanged
         : 0;
 
   const subjects = Array.from(subjectMap.values())
-    .map((s) => ({
-      subjectCode: s.subjectCode,
-      subjectName: s.subjectName,
-      masterWeeklyPeriods: s.masterWeeklyPeriods,
-      totalConducted: s.totalConducted,
-      timesChanged: s.timesChanged,
-      timesSwappedOut: s.timesSwappedOut,
-      timesSwappedIn: s.timesSwappedIn,
-      facultyNames: Array.from(s.facultyNames),
-      attendancePct:
-        s.totalMarked > 0 ? Math.round((s.totalPresent / s.totalMarked) * 100) : 0,
-    }))
+    .map((s) => {
+      const turnoutPct =
+        s.totalMarked > 0
+          ? Math.round((s.totalPresent / s.totalMarked) * 100)
+          : (s.totalConducted > 0 ? 100 : null);
+      const totalScheduled = s.totalScheduled || s.totalConducted || 0;
+      // In date range mode, if only 1 out of several scheduled classes had attendance posted,
+      // calculate effective attendance delivery across the period instead of falsely claiming 100%:
+      const effectiveAttendancePct =
+        s.totalConducted > 0 && totalScheduled > 0 && turnoutPct != null
+          ? Math.min(100, Math.round((s.totalConducted / totalScheduled) * turnoutPct))
+          : (s.totalConducted > 0 && turnoutPct != null ? turnoutPct : 0);
+
+      return {
+        subjectCode: s.subjectCode,
+        subjectName: s.subjectName,
+        masterWeeklyPeriods: s.masterWeeklyPeriods,
+        totalScheduled,
+        totalConducted: s.totalConducted,
+        timesChanged: s.timesChanged,
+        timesSwappedOut: s.timesSwappedOut,
+        timesSwappedIn: s.timesSwappedIn,
+        facultyNames: Array.from(s.facultyNames),
+        turnoutPct,
+        attendancePct: effectiveAttendancePct,
+      };
+    })
     .sort((a, b) => b.timesChanged - a.timesChanged || b.masterWeeklyPeriods - a.masterWeeklyPeriods);
 
   const faculties = Array.from(facultyMap.values())
